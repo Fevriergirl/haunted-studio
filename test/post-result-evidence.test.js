@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -219,6 +219,20 @@ test('creator, witness, comparator, and reviewer can be configured as isolated r
   assert.equal(witness.witnessCalls.length, 1);
   assert.equal(comparator.comparisonCalls.length, 1);
   assert.equal(reviewer.reviewCalls.length, 1);
+});
+
+test('missing post-result roles fail before a live-image cycle writes studio state', async () => {
+  class UnsupportedProvider extends EvidenceFixtureProvider {
+    get supportsPostResultEvidence() { return false; }
+  }
+  const parent = await mkdtemp(path.join(os.tmpdir(), 'haunted-evidence-preflight-'));
+  const rootDir = path.join(parent, 'studio');
+  const studio = new Studio({ rootDir, constitution, experiment });
+  await assert.rejects(
+    runCreativeCycle({ studio, provider: new UnsupportedProvider('none'), observations, generateImage: true }),
+    /post-result role provider/i
+  );
+  await assert.rejects(access(rootDir), { code: 'ENOENT' });
 });
 
 test('resume after each post-result boundary does not repeat persisted provider work or evidence', async (t) => {
