@@ -187,6 +187,21 @@ test('conceptual-only cycle records evidence unavailable and cannot claim artifa
   assert.ok((await studio.ledger.readAll()).some((event) => event.type === 'post_result_evidence_unavailable'));
 });
 
+test('pre-result candidate and critic records contain plans and forecasts, not claimed surprise', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-evidence-pre-result-language-'));
+  const studio = new Studio({ rootDir, constitution, experiment });
+  await runCreativeCycle({
+    studio, provider: new DeterministicProvider(), observations, generateImage: false,
+    features: { refusal: false }, operationId: 'operation_pre_result_language'
+  });
+  const events = await studio.ledger.readAll();
+  const candidates = events.find((event) => event.type === 'candidates_generated').payload.candidates;
+  assert.ok(candidates.every((candidate) => candidate.planned_ambiguity && !('proposed_accident' in candidate)));
+  const critiques = events.find((event) => event.type === 'critics_reported').payload.critiques;
+  assert.ok(critiques.every((critique) => 'surprise_potential' in critique.scores && !('productive_surprise' in critique.scores)));
+  assert.deepEqual((await studio.getState()).active_surprises, []);
+});
+
 test('artifact hashes and linked evidence IDs are preserved', async () => {
   const { studio, result } = await artifactCycle('useful');
   const events = await studio.ledger.readAll();
