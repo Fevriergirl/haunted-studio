@@ -57,7 +57,7 @@ test('intention commitment is stable across event timestamps and separate from l
     studio: secondStudio,
     provider: new DeterministicProvider(),
     observations,
-    cycleIdOverride: 'cycle_stable_commitment'
+    cycleIdOverride: 'cycle_different_event_metadata'
   });
 
   assert.equal(first.intentionHash, second.intentionHash);
