@@ -45,13 +45,6 @@ const ALLOWED_NEXT_CYCLE_EVENTS = new Map([
   ['intention_locked', new Set(['candidates_generated'])],
   ['candidates_generated', new Set(['critics_reported'])],
   ['critics_reported', new Set(['curation_decided'])],
-  ['curation_decided', new Set([
-    'curation_overridden_by_condition',
-    'candidate_revised',
-    'artifact_generated',
-    'audience_predicted',
-    'memory_consolidated'
-  ])],
   ['curation_overridden_by_condition', new Set([
     'artifact_generated',
     'audience_predicted',
@@ -65,6 +58,8 @@ const ALLOWED_NEXT_CYCLE_EVENTS = new Map([
   ['audience_predicted', new Set(['memory_consolidated'])],
   ['memory_consolidated', new Set(['cycle_completed'])]
 ]);
+
+const CURATION_DECISIONS = new Set(['accept', 'revise', 'reject_all']);
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -133,7 +128,7 @@ function validatePostCycleTransition({ type, cycleId }, events) {
   }
 }
 
-function validateCycleTransition({ type, cycleId }, events) {
+function validateCycleTransition({ type, cycleId, payload }, events) {
   const cycleEvents = events.filter((event) =>
     event.cycle_id === cycleId && CYCLE_EVENT_TYPES.has(event.type)
   );
@@ -164,13 +159,46 @@ function validateCycleTransition({ type, cycleId }, events) {
     throw new Error(`Cycle ${cycleId} requires memory_consolidated before cycle_completed.`);
   }
 
-  const allowed = ALLOWED_NEXT_CYCLE_EVENTS.get(last.type);
-  if (!allowed?.has(type)) {
-    throw new Error(`Invalid lifecycle transition for ${cycleId}: ${last.type} -> ${type}.`);
-  }
   if (type === 'curation_decided') {
     const priorCurations = cycleEvents.filter((event) => event.type === 'curation_decided').length;
-    if (priorCurations >= 2) throw new Error(`Cycle ${cycleId} already has the maximum legal curation decisions.`);
+    if (!CURATION_DECISIONS.has(payload.decision)) {
+      throw new Error(`Cycle ${cycleId} curation_decided requires a valid decision.`);
+    }
+    if (payload.round !== priorCurations) {
+      throw new Error(`Cycle ${cycleId} curation round ${payload.round} does not match expected round ${priorCurations}.`);
+    }
+    if (priorCurations >= 2) {
+      throw new Error(`Cycle ${cycleId} already has the maximum legal curation decisions.`);
+    }
+    if (priorCurations === 1 && payload.decision === 'revise') {
+      throw new Error(`Cycle ${cycleId} final curation cannot request another revision.`);
+    }
+  }
+
+  if (type === 'curation_overridden_by_condition') {
+    if (last.payload?.decision === 'accept') {
+      throw new Error(`Curation decision accept does not permit an acceptance override for ${cycleId}.`);
+    }
+    if (payload.decision !== 'accept') {
+      throw new Error(`Curation override for ${cycleId} must produce decision accept.`);
+    }
+  }
+
+  let allowed = ALLOWED_NEXT_CYCLE_EVENTS.get(last.type);
+  if (last.type === 'curation_decided') {
+    if (last.payload?.decision === 'accept') {
+      allowed = new Set(['artifact_generated', 'audience_predicted', 'memory_consolidated']);
+    } else if (last.payload?.decision === 'revise') {
+      allowed = new Set(['curation_overridden_by_condition', 'candidate_revised']);
+    } else if (last.payload?.decision === 'reject_all') {
+      allowed = new Set(['curation_overridden_by_condition', 'memory_consolidated']);
+    } else {
+      throw new Error(`Cycle ${cycleId} has invalid prior curation decision ${last.payload?.decision}.`);
+    }
+  }
+  if (!allowed?.has(type)) {
+    const detail = last.type === 'curation_decided' ? ` (${last.payload?.decision})` : '';
+    throw new Error(`Invalid lifecycle transition for ${cycleId}: ${last.type}${detail} -> ${type}.`);
   }
 }
 

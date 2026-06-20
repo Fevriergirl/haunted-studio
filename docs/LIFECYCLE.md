@@ -16,7 +16,11 @@ before persistence:
 - global events do not have a cycle identity;
 - the event is legal at the cycle's current lifecycle position.
 
-An append that fails validation does not write a ledger line.
+An append that fails validation does not write a ledger line. Appends to the
+same canonical ledger path are serialized within one Node.js process, so two
+concurrent terminal attempts cannot both validate against the same head.
+Separate operating-system processes are not coordinated; running multiple
+writers against one studio is unsupported and remains a documented risk.
 
 ### Version-0 compatibility
 
@@ -54,7 +58,9 @@ The normal and optional forward transitions are:
 | `intention_locked` | `candidates_generated` |
 | `candidates_generated` | `critics_reported` |
 | `critics_reported` | `curation_decided` |
-| `curation_decided` | `curation_overridden_by_condition`, `candidate_revised`, `artifact_generated`, `audience_predicted`, or `memory_consolidated` |
+| `curation_decided` with `accept` | `artifact_generated`, `audience_predicted`, or `memory_consolidated` |
+| `curation_decided` with `revise` | `candidate_revised` or `curation_overridden_by_condition` |
+| `curation_decided` with `reject_all` | `memory_consolidated` or `curation_overridden_by_condition` |
 | `curation_overridden_by_condition` | `artifact_generated`, `audience_predicted`, or `memory_consolidated` |
 | `candidate_revised` | `revision_critiqued` |
 | `revision_critiqued` | a final `curation_decided` |
@@ -66,7 +72,10 @@ The normal and optional forward transitions are:
 
 At most one effective `intention_locked` event and one `candidate_revised`
 event are allowed. At most two `curation_decided` events are allowed: the
-initial decision and, when revision occurs, the final decision.
+initial decision and, when revision occurs, the final decision. A final
+curation decision cannot request another revision. An override is legal only
+after `revise` or `reject_all` and must change the effective decision to
+`accept`.
 
 The lifecycle validator rejects:
 
@@ -75,6 +84,8 @@ The lifecycle validator rejects:
 - out-of-order or skipped lifecycle events;
 - duplicate effective intention locks;
 - duplicate revision events or excess curation rounds;
+- revision, artifact, audience, or memory transitions that contradict the
+  recorded curation decision;
 - completion before memory consolidation;
 - duplicate terminal events;
 - completion after failure or failure after completion;

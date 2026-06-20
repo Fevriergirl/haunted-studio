@@ -65,8 +65,9 @@ to loopback by default and is not safe for public exposure.
   application.
 - Human reviews require explicit consent and should use pseudonymous IDs.
 - External observations require source and rights metadata.
-- Ledger hashes detect modification; they do not prevent concurrent-write races
-  or guarantee that an event's claims are true.
+- Ledger hashes detect modification; they do not guarantee that an event's
+  claims are true. Appends are serialized within one Node.js process, but
+  separate processes must not write to the same studio concurrently.
 - Runtime data is ignored by Git but still requires filesystem access controls.
 
 ## Failure and recovery

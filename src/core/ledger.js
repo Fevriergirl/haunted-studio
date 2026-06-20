@@ -11,9 +11,33 @@ import {
 } from './event-contract.js';
 
 const GENESIS_HASH = '0'.repeat(64);
+const appendQueues = new Map();
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function ledgerKey(filePath) {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+async function serializeAppend(filePath, operation) {
+  const key = ledgerKey(filePath);
+  const previous = appendQueues.get(key) ?? Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.then(() => gate);
+  appendQueues.set(key, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (appendQueues.get(key) === queued) appendQueues.delete(key);
+  }
 }
 
 export class AppendOnlyLedger {
@@ -47,24 +71,26 @@ export class AppendOnlyLedger {
     payload = {},
     schemaVersion = CURRENT_EVENT_SCHEMA_VERSION
   }) {
-    const events = await this.readAll();
-    validateEventBeforeAppend({ type, actor, cycleId, payload, schemaVersion }, events);
-    const previous = events.at(-1);
-    const unsigned = {
-      event_id: id('evt'),
-      schema_version: schemaVersion,
-      sequence: events.length + 1,
-      timestamp: new Date().toISOString(),
-      type,
-      actor,
-      cycle_id: cycleId,
-      payload,
-      previous_hash: previous?.hash ?? GENESIS_HASH
-    };
-    const event = { ...unsigned, hash: sha256(canonicalize(unsigned)) };
-    await ensureDir(path.dirname(this.filePath));
-    await appendFile(this.filePath, `${JSON.stringify(event)}\n`, 'utf8');
-    return event;
+    return serializeAppend(this.filePath, async () => {
+      const events = await this.readAll();
+      validateEventBeforeAppend({ type, actor, cycleId, payload, schemaVersion }, events);
+      const previous = events.at(-1);
+      const unsigned = {
+        event_id: id('evt'),
+        schema_version: schemaVersion,
+        sequence: events.length + 1,
+        timestamp: new Date().toISOString(),
+        type,
+        actor,
+        cycle_id: cycleId,
+        payload,
+        previous_hash: previous?.hash ?? GENESIS_HASH
+      };
+      const event = { ...unsigned, hash: sha256(canonicalize(unsigned)) };
+      await ensureDir(path.dirname(this.filePath));
+      await appendFile(this.filePath, `${JSON.stringify(event)}\n`, 'utf8');
+      return event;
+    });
   }
 
   async verify() {
