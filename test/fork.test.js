@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Studio } from '../src/core/studio.js';
@@ -69,4 +69,37 @@ test('fork resumes after copy crash and remains retryable after parent history a
   const repeated = await forkStudio({ studio, targetRoot, label: 'recoverable fork', operationId });
   assert.equal(repeated.forkId, recovered.forkId);
   assert.equal((await new AppendOnlyLedger(path.join(targetRoot, 'ledger.jsonl')).readAll()).filter((event) => event.type === 'studio_forked').length, 1);
+});
+
+test('fork retry after provenance append repairs and publishes the target projection', async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), 'haunted-fork-event-crash-'));
+  const rootDir = path.join(parent, 'source-studio');
+  const targetRoot = path.join(parent, 'forked-studio');
+  const studio = new Studio({ rootDir, constitution, experiment });
+  await studio.initialize();
+  const operationId = 'operation_fork_event_crash';
+  await assert.rejects(
+    forkStudio({ studio, targetRoot, label: 'event crash', operationId, crashAfter: 'studio_forked' }),
+    /injected crash/i
+  );
+  const recovered = await forkStudio({ studio, targetRoot, label: 'event crash', operationId });
+  const targetStudio = new Studio({ rootDir: targetRoot, constitution, experiment });
+  const state = await targetStudio.initialize();
+  assert.equal(state.ledger_head.event_hash, (await targetStudio.ledger.readAll()).at(-1).hash);
+  assert.equal(recovered.verification.valid, true);
+});
+
+test('fork refuses to commandeer an unrelated existing parent-prefix snapshot', async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), 'haunted-fork-existing-'));
+  const rootDir = path.join(parent, 'source-studio');
+  const targetRoot = path.join(parent, 'existing-snapshot');
+  const studio = new Studio({ rootDir, constitution, experiment });
+  await studio.initialize();
+  await cp(rootDir, targetRoot, { recursive: true });
+  const before = await readFile(path.join(targetRoot, 'ledger.jsonl'), 'utf8');
+  await assert.rejects(
+    forkStudio({ studio, targetRoot, label: 'must reject', operationId: 'operation_unrelated_target' }),
+    /already exists/i
+  );
+  assert.equal(await readFile(path.join(targetRoot, 'ledger.jsonl'), 'utf8'), before);
 });

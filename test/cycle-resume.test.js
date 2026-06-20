@@ -177,6 +177,20 @@ test('concurrent identical cycle requests return one logical result', async () =
   assert.equal(events.filter((event) => event.type === 'cycle_completed').length, 1);
 });
 
+test('concurrent distinct cycle operations serialize against the latest projection', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-cycle-concurrent-distinct-'));
+  const studio = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  const [first, second] = await Promise.all([
+    runCreativeCycle({ studio, provider: new DeterministicProvider(), observations, operationId: 'operation_concurrent_a' }),
+    runCreativeCycle({ studio, provider: new DeterministicProvider(), observations, operationId: 'operation_concurrent_b' })
+  ]);
+  assert.notEqual(first.cycleId, second.cycleId);
+  const state = await studio.getState();
+  assert.equal(state.cycle_count, 2);
+  assert.equal(Object.values(state.observation_counts).reduce((sum, count) => sum + count, 0), 2);
+  assert.deepEqual(state, await (await import('../src/core/projection.js')).projectLedger(await studio.ledger.readAll()));
+});
+
 test('incomplete cycle requires explicit resume and preserves its intention commitment', async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-explicit-resume-'));
   const operationId = 'operation_explicit_resume';
