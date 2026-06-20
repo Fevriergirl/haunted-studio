@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { canonicalize } from './canonical-json.js';
+
 export const CURRENT_EVENT_SCHEMA_VERSION = 1;
 export const LEGACY_EVENT_SCHEMA_VERSION = 0;
 
@@ -74,6 +77,135 @@ function isRecord(value) {
 
 function hasCycleIdentity(cycleId) {
   return typeof cycleId === 'string' && cycleId.trim().length > 0;
+}
+
+function requireEvidenceEnvelope(item, { cycleId, artifact, lockEventId, label }) {
+  if (!isRecord(item)) throw new Error(`${label} must be an evidence object.`);
+  const requiredText = ['evidence_id', 'source_role', 'source_type', 'timestamp', 'classification'];
+  for (const field of requiredText) {
+    if (typeof item[field] !== 'string' || item[field].trim().length === 0) throw new Error(`${label}.${field} is required.`);
+  }
+  if (item.cycle_id !== cycleId) throw new Error(`${label} has mismatched cycle identity.`);
+  if (item.artifact_id !== artifact.artifact_id || item.artifact_hash !== artifact.artifact_hash) {
+    throw new Error(`${label} has mismatched artifact identity or artifact hash.`);
+  }
+  if (item.locked_intention_event_id !== lockEventId) throw new Error(`${label} has a broken locked-intention link.`);
+  if (item.schema_version !== 1) throw new Error(`${label} requires evidence schema version 1.`);
+  if (!Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) throw new Error(`${label}.confidence must be between 0 and 1.`);
+  if (typeof item.memory_eligible !== 'boolean' || typeof item.later_used !== 'boolean') throw new Error(`${label} requires memory eligibility and later-use flags.`);
+  if (typeof item.review_status !== 'string') throw new Error(`${label}.review_status is required.`);
+}
+
+function assertUniqueIds(items, field, label) {
+  const ids = items.map((item) => item?.[field]);
+  if (ids.some((value) => typeof value !== 'string' || !value)) throw new Error(`${label} requires ${field}.`);
+  if (new Set(ids).size !== ids.length) throw new Error(`${label} contains duplicate ${field}.`);
+  return new Set(ids);
+}
+
+function validatePostResultEvidence(type, payload, cycleId, events) {
+  if (!['artifact_witnessed', 'artifact_deviations_compared', 'surprise_reviewed', 'post_result_evidence_unavailable'].includes(type)) return;
+  const cycleEvents = events.filter((event) => event.cycle_id === cycleId);
+  const artifact = cycleEvents.find((event) => event.type === 'artifact_generated')?.payload;
+  if (type === 'post_result_evidence_unavailable') {
+    if (artifact) throw new Error('post_result_evidence_unavailable is invalid after an artifact exists.');
+    return;
+  }
+  if (!artifact?.artifact_id || !artifact?.artifact_hash) throw new Error(`${type} requires a recorded artifact identity and artifact hash.`);
+  if (payload.artifact_id !== artifact.artifact_id || payload.artifact_hash !== artifact.artifact_hash) {
+    throw new Error(`${type} has mismatched artifact identity or artifact hash.`);
+  }
+  const lockEventId = cycleEvents.find((event) => event.type === 'intention_locked')?.event_id;
+  const witness = cycleEvents.find((event) => event.type === 'artifact_witnessed')?.payload;
+  const compared = cycleEvents.find((event) => event.type === 'artifact_deviations_compared')?.payload;
+
+  if (type === 'artifact_witnessed') {
+    if (!Array.isArray(payload.observations) || payload.observations.length === 0) throw new Error('artifact_witnessed requires at least one observation.');
+    assertUniqueIds(payload.observations, 'evidence_id', 'artifact witness observations');
+    payload.observations.forEach((item, index) => {
+      requireEvidenceEnvelope(item, { cycleId, artifact, lockEventId, label: `artifact witness observation ${index}` });
+      if (item.source_role !== 'artifact_witness' || item.source_type !== 'artifact_observation' || item.classification !== 'artifact_observation') {
+        throw new Error(`artifact witness observation ${index} has invalid source typing.`);
+      }
+    });
+    return;
+  }
+
+  const witnessIds = assertUniqueIds(witness?.observations ?? [], 'evidence_id', 'persisted witness observations');
+  if (type === 'artifact_deviations_compared') {
+    if (!Array.isArray(payload.witness_evidence_ids) || payload.witness_evidence_ids.length !== witnessIds.size ||
+        payload.witness_evidence_ids.some((item) => !witnessIds.has(item))) {
+      throw new Error(`${type} has a broken witness evidence link.`);
+    }
+    if (!Array.isArray(payload.plan_items) || !Array.isArray(payload.comparisons) || payload.comparisons.length === 0) {
+      throw new Error('artifact_deviations_compared requires plan items and comparison evidence.');
+    }
+    const planIds = assertUniqueIds(payload.plan_items, 'plan_item_id', 'comparison plan items');
+    for (const [index, item] of payload.plan_items.entries()) {
+      const expectedPlanId = `plan_${createHash('sha256').update(canonicalize({
+        classification: item.classification,
+        description: item.description,
+        source_event_id: item.source_event_id
+      })).digest('hex').slice(0, 24)}`;
+      if (!['anticipated_risk', 'planned_ambiguity', 'planned_variation'].includes(item.classification) ||
+          typeof item.description !== 'string' || item.source_event_id !== lockEventId || item.intentional !== true ||
+          item.plan_item_id !== expectedPlanId) {
+        throw new Error(`comparison plan item ${index} has invalid plan provenance.`);
+      }
+    }
+    assertUniqueIds(payload.comparisons, 'evidence_id', 'comparison evidence');
+    payload.comparisons.forEach((item, index) => {
+      requireEvidenceEnvelope(item, { cycleId, artifact, lockEventId, label: `comparison evidence ${index}` });
+      if (item.source_role !== 'deviation_comparator' || item.source_type !== 'artifact_deviation') {
+        throw new Error(`comparison evidence ${index} has invalid source typing.`);
+      }
+      if (!witnessIds.has(item.witness_evidence_id)) throw new Error(`comparison evidence ${index} has a broken witness evidence link.`);
+      if (!Array.isArray(item.related_plan_item_ids) || item.related_plan_item_ids.some((planId) => !planIds.has(planId))) {
+        throw new Error(`comparison evidence ${index} has an unknown related plan item.`);
+      }
+      if (item.explicitly_planned !== (item.related_plan_item_ids.length > 0 || item.explicitly_planned === true)) {
+        throw new Error(`comparison evidence ${index} has inconsistent planned classification.`);
+      }
+    });
+    return;
+  }
+
+  if (!Array.isArray(compared?.witness_evidence_ids) || compared.witness_evidence_ids.some((item) => !witnessIds.has(item))) {
+    throw new Error('surprise_reviewed follows comparison evidence with broken witness links.');
+  }
+  const comparisonIds = assertUniqueIds(compared?.comparisons ?? [], 'evidence_id', 'persisted comparison evidence');
+  if (!Array.isArray(payload.reviewed_evidence) || payload.reviewed_evidence.length !== comparisonIds.size) {
+    throw new Error('surprise_reviewed must review every comparison exactly once.');
+  }
+  assertUniqueIds(payload.reviewed_evidence, 'evidence_id', 'reviewed evidence');
+  const reviewedComparisonIds = assertUniqueIds(payload.reviewed_evidence, 'comparison_evidence_id', 'reviewed evidence');
+  if (reviewedComparisonIds.size !== comparisonIds.size || [...reviewedComparisonIds].some((item) => !comparisonIds.has(item))) {
+    throw new Error('surprise_reviewed has a broken comparison evidence link.');
+  }
+  const comparisonById = new Map(compared.comparisons.map((item) => [item.evidence_id, item]));
+  payload.reviewed_evidence.forEach((item, index) => {
+    requireEvidenceEnvelope(item, { cycleId, artifact, lockEventId, label: `reviewed evidence ${index}` });
+    if (item.source_role !== 'adversarial_surprise_reviewer') throw new Error(`reviewed evidence ${index} has invalid source typing.`);
+    if (!Array.isArray(item.witness_evidence_ids) || item.witness_evidence_ids.some((witnessId) => !witnessIds.has(witnessId))) {
+      throw new Error(`reviewed evidence ${index} has a broken witness evidence link.`);
+    }
+    if (item.classification !== 'productive_surprise') return;
+    const source = comparisonById.get(item.comparison_evidence_id);
+    const findings = item.adversarial_findings;
+    const findingsPass = findings?.planned === false && findings?.trivial === false && findings?.incoherent === false &&
+      findings?.common_in_prior_work === false && findings?.technical_defect === false && findings?.falsely_inferred === false &&
+      findings?.observable_support === true && findings?.material_interpretive_change === true && findings?.relates_to_work === true;
+    if (source?.classification !== 'potentially_productive_surprise' || source.explicitly_planned || source.related_plan_item_ids?.length ||
+        !source.observable_support || !source.coherent || !source.material_interpretive_change || !source.relates_to_work ||
+        item.review_status !== 'confirmed' || item.memory_eligible !== true || item.confidence <= 0 ||
+        !Array.isArray(item.challenges) || item.challenges.length === 0 || !findingsPass) {
+      throw new Error('productive surprise confirmation lacks required observable and adversarial criteria.');
+    }
+  });
+  const foundProductive = payload.reviewed_evidence.some((item) => item.classification === 'productive_surprise');
+  if (typeof payload.no_productive_surprise !== 'boolean' || payload.no_productive_surprise === foundProductive) {
+    throw new Error('surprise_reviewed has inconsistent no_productive_surprise status.');
+  }
 }
 
 export function eventSchemaVersion(event) {
@@ -233,6 +365,7 @@ function validateCycleTransition({ type, cycleId, payload }, events, { allowLega
       throw new Error('productive_surprise requires confirmed adversarial review.');
     }
   }
+  validatePostResultEvidence(type, payload, cycleId, events);
 }
 
 export function validateEventBeforeAppend(event, existingEvents, options = {}) {

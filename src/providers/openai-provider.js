@@ -98,7 +98,7 @@ export class OpenAIProvider {
   }
 
   critiqueCandidate(context) {
-    return this.requestJson({ role: 'critic role', task: 'Critique the candidate. Return candidate_id, scores with formal, truth, historical, adversarial_survival, productive_surprise, confidence, formal_read, truth_read, historical_read, strongest_objection, shortcut_findings, revision, intention_alignment. Scores must be 0 to 1.', context, requiredKeys: ['candidate_id', 'scores', 'confidence', 'formal_read', 'truth_read', 'historical_read', 'strongest_objection', 'shortcut_findings', 'revision', 'intention_alignment'] });
+    return this.requestJson({ role: 'critic role', task: 'Critique the candidate. Return candidate_id, scores with formal, truth, historical, adversarial_survival, surprise_potential, confidence, formal_read, truth_read, historical_read, strongest_objection, shortcut_findings, revision, intention_alignment. surprise_potential is a pre-result forecast, not evidence of productive surprise. Scores must be 0 to 1.', context, requiredKeys: ['candidate_id', 'scores', 'confidence', 'formal_read', 'truth_read', 'historical_read', 'strongest_objection', 'shortcut_findings', 'revision', 'intention_alignment'] });
   }
 
   reviseCandidate(context) {

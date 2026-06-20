@@ -37,9 +37,11 @@ fabricate artifact observations or artifact-derived surprise.
 | `unresolved_deviation` | After comparison or review | Observable support exists but classification/confidence is insufficient | Observed/inferred uncertainty | Preserved as evidence, ineligible for surprise memory until a later typed review. |
 | `rejected_accident` | After adversarial review | Proposed surprise plus rejection reason | Reviewed negative finding | Preserved for provenance; ineligible for productive-surprise memory or future-work claims. |
 
-Legacy `proposed_accident` values are adapted in memory as
-`planned_ambiguity`. Their original bytes and ledger hashes remain unchanged.
-They are never treated as discovered or confirmed surprise.
+Legacy `proposed_accident` values are adapted as `planned_ambiguity`.
+Historical untyped `memory_consolidated.active_surprises` claims are excluded
+from active surprise and exposed as non-memory-eligible `planned_hypotheses`.
+Their original bytes and ledger hashes remain unchanged. They are never treated
+as discovered or confirmed surprise.
 
 ## Provenance envelope
 
@@ -88,10 +90,12 @@ difference as `expected_realization`, `planned_variation`, `neutral_deviation`,
 `technical_failure`, `random_incoherence`, `potentially_productive_surprise`,
 or `unresolved`.
 
-The adversarial reviewer receives a provisional comparison and its linked
-evidence. It must test whether the feature was planned, trivial, incoherent,
-already common in prior work, falsely inferred, or merely technical failure.
-It returns `confirmed`, `rejected`, or `unresolved` with reasons and confidence.
+The adversarial reviewer receives a provisional comparison, its linked
+evidence, and committed prior-work summaries including reviewed post-result
+evidence where available. It must test whether the feature was planned,
+trivial, incoherent, already common in prior work, falsely inferred, or merely
+technical failure. It returns `confirmed`, `rejected`, or `unresolved` with
+structured findings, challenges, and confidence.
 
 ## Surprise confirmation
 
@@ -154,7 +158,8 @@ Live projection and replay continue to use the same reducer.
 - Version-0 and existing version-1 ledger lines remain byte-for-byte unchanged.
 - Read adapters interpret candidate `proposed_accident` as planned ambiguity.
 - Historical `memory_consolidated.active_surprises` remain readable historical
-  payloads. They are not retroactively reclassified or rewritten.
+  payloads and are not rewritten. The projection adapter treats untyped entries
+  as planned hypotheses rather than active surprise.
 - New cycles write the new evidence events and do not use `proposed_accident` as
   proof of surprise.
 - New event order validation applies to newly written version-1 events. Stored
@@ -168,3 +173,8 @@ quality, novelty, or development. The deterministic provider supplies fixtures,
 not empirical evidence. Artifact inspection quality still depends on the
 provider and artifact representation. PR 2B will address how typed evidence
 enters autobiographical memory and how later causal use is recorded.
+
+The existing experiment weight key `productive_surprise` remains unchanged for
+configuration compatibility in this PR. It now weights the explicitly
+pre-result `surprise_potential` forecast. Sensitivity and weight redesign remain
+reserved for the experimental-integrity phase.

@@ -1,4 +1,6 @@
 import { id } from '../core/ids.js';
+import { createHash } from 'node:crypto';
+import { canonicalize } from '../core/canonical-json.js';
 
 const COMPARISON_CLASSIFICATIONS = new Set([
   'expected_realization',
@@ -51,7 +53,11 @@ function baseEvidence({ cycleId, artifactId, artifactHash, sourceRole, sourceTyp
   };
 }
 
-export function normalizeCandidatePlan(candidate = {}) {
+function planItemId(classification, description, sourceEventId) {
+  return `plan_${createHash('sha256').update(canonicalize({ classification, description, source_event_id: sourceEventId })).digest('hex').slice(0, 24)}`;
+}
+
+export function normalizeCandidatePlan(candidate = {}, { lockedIntention = {}, lockEventId = null } = {}) {
   const planned = [];
   if (Array.isArray(candidate.planned_ambiguities)) planned.push(...candidate.planned_ambiguities.filter((item) => typeof item === 'string' && item.trim()));
   if (typeof candidate.planned_ambiguity === 'string' && candidate.planned_ambiguity.trim()) planned.push(candidate.planned_ambiguity.trim());
@@ -59,10 +65,26 @@ export function normalizeCandidatePlan(candidate = {}) {
     ? candidate.proposed_accident.trim()
     : null;
   if (legacy && !planned.includes(legacy)) planned.push(legacy);
+  const risks = [lockedIntention.anticipated_risk, ...(lockedIntention.anticipated_risks ?? []), candidate.anticipated_risk]
+    .filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim());
+  const variations = Array.isArray(candidate.planned_variations)
+    ? candidate.planned_variations.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
+    : [];
+  const planItems = [
+    ...[...new Set(risks)].map((description) => ({ classification: 'anticipated_risk', description })),
+    ...[...new Set(planned)].map((description) => ({ classification: 'planned_ambiguity', description })),
+    ...[...new Set(variations)].map((description) => ({ classification: 'planned_variation', description }))
+  ].map((item) => ({
+    plan_item_id: planItemId(item.classification, item.description, lockEventId),
+    ...item,
+    source_event_id: lockEventId,
+    intentional: true
+  }));
   return {
-    anticipated_risks: [candidate.anticipated_risk].filter((item) => typeof item === 'string' && item.trim()),
+    anticipated_risks: [...new Set(risks)],
     planned_ambiguities: [...new Set(planned)],
-    planned_variations: Array.isArray(candidate.planned_variations) ? candidate.planned_variations : [],
+    planned_variations: variations,
+    plan_items: planItems,
     ...(legacy ? { legacy_source_field: 'proposed_accident' } : {})
   };
 }
@@ -93,6 +115,7 @@ export function buildWitnessPayload({ output, cycleId, artifactId, artifactHash,
 
 export function buildComparisonPayload({ output, witness, plan = {}, cycleId, artifactId, artifactHash, lockEventId }) {
   const witnessIds = new Set(witness.observations.map((item) => item.evidence_id));
+  const planById = new Map((plan.plan_items ?? []).map((item) => [item.plan_item_id, item]));
   const comparisons = requireArray(requireRecord(output, 'comparison output').comparisons, 'comparisons')
     .map((comparison, index) => {
       requireRecord(comparison, `comparisons[${index}]`);
@@ -104,9 +127,12 @@ export function buildComparisonPayload({ output, witness, plan = {}, cycleId, ar
       }
       const description = requireText(comparison.description, `comparisons[${index}].description`);
       const normalizedDescription = description.toLowerCase();
-      const matchesPlan = [...(plan.planned_ambiguities ?? []), ...(plan.planned_variations ?? [])]
-        .some((item) => typeof item === 'string' && item.trim() &&
-          (normalizedDescription.includes(item.trim().toLowerCase()) || item.trim().toLowerCase().includes(normalizedDescription)));
+      const suppliedPlanIds = requireArray(comparison.related_plan_item_ids ?? [], `comparisons[${index}].related_plan_item_ids`);
+      if (suppliedPlanIds.some((itemId) => !planById.has(itemId))) throw new Error(`comparisons[${index}] references unknown plan item.`);
+      const matchedPlanIds = [...planById.values()]
+        .filter((item) => normalizedDescription.includes(item.description.toLowerCase()) || item.description.toLowerCase().includes(normalizedDescription))
+        .map((item) => item.plan_item_id);
+      const relatedPlanItemIds = [...new Set([...suppliedPlanIds, ...matchedPlanIds])];
       return {
         ...baseEvidence({
           cycleId, artifactId, artifactHash, lockEventId,
@@ -116,7 +142,8 @@ export function buildComparisonPayload({ output, witness, plan = {}, cycleId, ar
         }),
         witness_evidence_id: comparison.witness_evidence_id,
         description,
-        explicitly_planned: comparison.explicitly_planned === true || matchesPlan,
+        explicitly_planned: comparison.explicitly_planned === true || relatedPlanItemIds.length > 0,
+        related_plan_item_ids: relatedPlanItemIds,
         observable_support: comparison.observable_support === true,
         coherent: comparison.coherent === true,
         material_interpretive_change: comparison.material_interpretive_change === true,
@@ -127,6 +154,7 @@ export function buildComparisonPayload({ output, witness, plan = {}, cycleId, ar
     artifact_id: artifactId,
     artifact_hash: artifactHash,
     witness_evidence_ids: witness.observations.map((item) => item.evidence_id),
+    plan_items: plan.plan_items ?? [],
     comparisons
   };
 }
@@ -134,11 +162,16 @@ export function buildComparisonPayload({ output, witness, plan = {}, cycleId, ar
 export function buildReviewPayload({ output, witness, comparison, cycleId, artifactId, artifactHash, lockEventId }) {
   const reviewOutput = requireRecord(output, 'surprise review output');
   const reviews = requireArray(reviewOutput.reviews, 'surprise reviews');
-  const reviewByComparison = new Map(reviews.map((review, index) => {
+  const provisionalIds = new Set(comparison.comparisons.filter((item) => item.classification === 'potentially_productive_surprise').map((item) => item.evidence_id));
+  const reviewByComparison = new Map();
+  reviews.forEach((review, index) => {
     requireRecord(review, `surprise reviews[${index}]`);
     if (!['confirmed', 'rejected', 'unresolved'].includes(review.status)) throw new Error(`surprise reviews[${index}] has invalid status.`);
-    return [review.comparison_evidence_id, review];
-  }));
+    if (!provisionalIds.has(review.comparison_evidence_id)) throw new Error(`surprise reviews[${index}] references unknown provisional comparison.`);
+    if (reviewByComparison.has(review.comparison_evidence_id)) throw new Error(`surprise reviews[${index}] duplicates a comparison review.`);
+    reviewByComparison.set(review.comparison_evidence_id, review);
+  });
+  if (reviewByComparison.size !== provisionalIds.size) throw new Error('Every provisional surprise requires one adversarial review.');
   const witnessById = new Map(witness.observations.map((item) => [item.evidence_id, item]));
   const reviewed = comparison.comparisons.map((item) => {
     const witnessItem = witnessById.get(item.witness_evidence_id);
@@ -150,12 +183,24 @@ export function buildReviewPayload({ output, witness, comparison, cycleId, artif
     let challenges = [];
 
     if (item.classification === 'potentially_productive_surprise') {
-      const criteriaSatisfied = !item.explicitly_planned && item.observable_support && Boolean(witnessItem?.observable_support) &&
+      const findings = review?.findings;
+      const reviewChallenges = Array.isArray(review?.challenges) ? review.challenges.filter((value) => typeof value === 'string' && value.trim()) : [];
+      if (review?.status === 'confirmed') {
+        requireRecord(findings, 'confirmed surprise adversarial findings');
+        if (reviewChallenges.length === 0) throw new Error('Confirmed surprise requires adversarial challenges.');
+      }
+      const adversariallySupported = findings && findings.planned === false && findings.trivial === false &&
+        findings.incoherent === false && findings.common_in_prior_work === false && findings.technical_defect === false &&
+        findings.falsely_inferred === false && findings.observable_support === true &&
+        findings.material_interpretive_change === true && findings.relates_to_work === true;
+      const criteriaSatisfied = !item.explicitly_planned && (item.related_plan_item_ids?.length ?? 0) === 0 &&
+        item.observable_support && Boolean(witnessItem?.observable_support) &&
         item.coherent && item.material_interpretive_change && item.relates_to_work;
       reviewStatus = review?.status ?? 'rejected';
       reviewConfidence = review ? confidence(review.confidence, 'surprise review confidence') : item.confidence;
-      challenges = Array.isArray(review?.challenges) ? review.challenges : ['No independent review supplied.'];
-      if (criteriaSatisfied && reviewStatus === 'confirmed') {
+      if (reviewStatus === 'confirmed' && reviewConfidence === 0) throw new Error('Confirmed surprise requires positive review confidence.');
+      challenges = reviewChallenges.length ? reviewChallenges : ['No independent review supplied.'];
+      if (criteriaSatisfied && adversariallySupported && reviewStatus === 'confirmed') {
         classification = 'productive_surprise';
         memoryEligible = true;
       } else if (reviewStatus === 'unresolved') {
@@ -182,7 +227,8 @@ export function buildReviewPayload({ output, witness, comparison, cycleId, artif
       description: item.description,
       review_status: reviewStatus,
       memory_eligible: memoryEligible,
-      challenges
+      challenges,
+      adversarial_findings: review?.findings ?? null
     };
   });
   return {

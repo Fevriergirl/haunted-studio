@@ -147,7 +147,7 @@ export class DeterministicProvider {
       adversarial_survival: roundScore(0.45 + stableNumber(`${candidate.id}:adversary`) * 0.45),
       // This is a pre-result forecast used by the existing scoring model, not
       // evidence that productive surprise occurred.
-      productive_surprise: roundScore(0.48 + stableNumber(candidate.planned_ambiguity ?? candidate.id) * 0.44)
+      surprise_potential: roundScore(0.48 + stableNumber(candidate.planned_ambiguity ?? candidate.id) * 0.44)
     };
 
     const shortcutFindings = constitution.forbidden_shortcuts
@@ -205,7 +205,12 @@ export class DeterministicProvider {
   async curate({ candidates, critiques, experiment, allowRevision = false }) {
     const ranked = candidates.map((candidate) => {
       const critique = critiques.find((item) => item.candidate_id === candidate.id);
-      const base = weightedScore(critique.scores, experiment.weights);
+      const base = weightedScore({
+        ...critique.scores,
+        // The experiment configuration retains its legacy weight name in PR 2A;
+        // only the pre-result claim is renamed to a forecast.
+        productive_surprise: critique.scores.surprise_potential
+      }, experiment.weights);
       const penalty = critique.shortcut_findings.reduce((sum, finding) => sum + finding.penalty, 0);
       const score = roundScore(base - penalty);
       return { candidate, critique, score, penalty: roundScore(penalty) };

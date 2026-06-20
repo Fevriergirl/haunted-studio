@@ -421,6 +421,7 @@ test('ledger rejects mismatched evidence identity, broken links, and unsupported
     type: 'surprise_reviewed', actor: 'test', cycleId,
     payload: {
       artifact_id: 'artifact_a', artifact_hash: 'a'.repeat(64),
+      no_productive_surprise: false,
       reviewed_evidence: [{
         ...comparison, evidence_id: 'evidence_review', comparison_evidence_id: comparison.evidence_id,
         source_role: 'adversarial_surprise_reviewer', source_type: 'productive_surprise',

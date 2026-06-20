@@ -8,6 +8,7 @@ export const INITIAL_STATE = {
   motifs: {},
   observation_counts: {},
   active_surprises: [],
+  planned_hypotheses: [],
   unresolved_tensions: [],
   audience_findings: [],
   corrections: [],
@@ -37,7 +38,27 @@ function applyCompletedCycle(state, event, cycleEvents) {
   if (memory) {
     state.motifs = memory.motifs ?? state.motifs;
     state.observation_counts = memory.observation_counts ?? state.observation_counts;
-    state.active_surprises = memory.active_surprises ?? state.active_surprises;
+    const rememberedClaims = memory.active_surprises ?? state.active_surprises;
+    state.active_surprises = rememberedClaims.filter((claim) =>
+      claim?.classification === 'productive_surprise' &&
+      claim?.review_status === 'confirmed' &&
+      claim?.memory_eligible === true &&
+      typeof claim?.evidence_id === 'string'
+    );
+    const legacyClaims = rememberedClaims.filter((claim) => !state.active_surprises.includes(claim));
+    for (const claim of legacyClaims) {
+      const adapted = {
+        classification: 'planned_ambiguity',
+        description: claim?.description ?? String(claim),
+        source_candidate_id: claim?.source_candidate_id ?? null,
+        introduced_cycle: claim?.introduced_cycle ?? event.cycle_id,
+        legacy_source: 'memory_consolidated.active_surprises',
+        memory_eligible: false
+      };
+      if (!state.planned_hypotheses.some((item) => canonicalKey(item) === canonicalKey(adapted))) {
+        state.planned_hypotheses.push(adapted);
+      }
+    }
     state.unresolved_tensions = memory.unresolved_tensions ?? state.unresolved_tensions;
   }
   state.cycle_count += 1;
@@ -61,6 +82,10 @@ function applyCompletedCycle(state, event, cycleEvents) {
       best_score: manifest.curation?.score ?? null
     });
   }
+}
+
+function canonicalKey(value) {
+  return JSON.stringify(value, Object.keys(value).sort());
 }
 
 function completedManifest(events, cycleId) {

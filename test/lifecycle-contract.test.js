@@ -22,10 +22,43 @@ async function temporaryLedger(prefix = 'haunted-lifecycle-') {
 }
 
 async function appendEvent(ledger, cycleId, type, payload = {}) {
+  const events = await ledger.readAll();
+  const lockEventId = events.find((event) => event.cycle_id === cycleId && event.type === 'intention_locked')?.event_id;
+  const evidenceBase = {
+    cycle_id: cycleId, artifact_id: 'artifact_fixture', artifact_hash: '0'.repeat(64),
+    timestamp: '2025-01-01T00:00:00.000Z', schema_version: 1, code_commit: null,
+    locked_intention_event_id: lockEventId, confidence: 1, review_status: 'unreviewed',
+    memory_eligible: false, later_used: false
+  };
+  const witness = {
+    ...evidenceBase, evidence_id: 'evidence_witness_fixture', source_role: 'artifact_witness',
+    source_type: 'artifact_observation', classification: 'artifact_observation',
+    description: 'Fixture observation.', observable_support: 'fixture bytes'
+  };
+  const comparison = {
+    ...evidenceBase, evidence_id: 'evidence_comparison_fixture', source_role: 'deviation_comparator',
+    source_type: 'artifact_deviation', classification: 'expected_realization',
+    witness_evidence_id: witness.evidence_id, description: 'Fixture expected realization.',
+    explicitly_planned: false, related_plan_item_ids: [], observable_support: true,
+    coherent: true, material_interpretive_change: false, relates_to_work: true
+  };
+  const reviewed = {
+    ...evidenceBase, evidence_id: 'evidence_review_fixture', source_role: 'adversarial_surprise_reviewer',
+    source_type: 'expected_realization', classification: 'expected_realization',
+    comparison_evidence_id: comparison.evidence_id, witness_evidence_ids: [witness.evidence_id],
+    description: comparison.description, review_status: 'not_applicable', challenges: [], adversarial_findings: null
+  };
   const defaults = {
-    artifact_witnessed: { artifact_id: 'artifact_fixture', artifact_hash: '0'.repeat(64), observations: [] },
-    artifact_deviations_compared: { artifact_id: 'artifact_fixture', witness_evidence_ids: [], comparisons: [] },
-    surprise_reviewed: { artifact_id: 'artifact_fixture', reviewed_evidence: [] },
+    artifact_generated: { artifact_id: 'artifact_fixture', artifact_hash: '0'.repeat(64), candidate_id: 'candidate_fixture' },
+    artifact_witnessed: { artifact_id: 'artifact_fixture', artifact_hash: '0'.repeat(64), observations: [witness] },
+    artifact_deviations_compared: {
+      artifact_id: 'artifact_fixture', artifact_hash: '0'.repeat(64),
+      witness_evidence_ids: [witness.evidence_id], plan_items: [], comparisons: [comparison]
+    },
+    surprise_reviewed: {
+      artifact_id: 'artifact_fixture', artifact_hash: '0'.repeat(64),
+      no_productive_surprise: true, reviewed_evidence: [reviewed]
+    },
     post_result_evidence_unavailable: { reason: 'conceptual_only_fixture' }
   };
   return ledger.append({ type, actor: 'test', cycleId, payload: { ...(defaults[type] ?? {}), ...payload } });

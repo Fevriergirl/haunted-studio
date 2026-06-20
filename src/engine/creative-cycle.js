@@ -31,6 +31,28 @@ function curationResult(payload) {
   return result;
 }
 
+function completedPriorWorks(events, currentCycleId) {
+  return events
+    .filter((event) => event.type === 'cycle_completed' && event.cycle_id !== currentCycleId)
+    .map((completed) => {
+      const cycleEvents = events.filter((event) => event.cycle_id === completed.cycle_id);
+      const reviewed = cycleEvents.find((event) => event.type === 'surprise_reviewed')?.payload?.reviewed_evidence ?? [];
+      return {
+        cycle_id: completed.cycle_id,
+        candidate_id: completed.payload.selected_candidate?.id ?? null,
+        title: completed.payload.selected_candidate?.title ?? null,
+        artifact_brief: completed.payload.selected_candidate?.artifact_brief ?? null,
+        artifact_hash: cycleEvents.find((event) => event.type === 'artifact_generated')?.payload?.artifact_hash ?? null,
+        reviewed_post_result_evidence: reviewed.map((item) => ({
+          evidence_id: item.evidence_id,
+          classification: item.classification,
+          description: item.description,
+          review_status: item.review_status
+        }))
+      };
+    });
+}
+
 function cycleResultFromEvents({ events, cycleId, operationId, state, verification, resumed = false }) {
   const cycleEvents = events.filter((event) => event.cycle_id === cycleId);
   const attention = cycleEvents.find((event) => event.type === 'observation_selected')?.payload;
@@ -341,7 +363,11 @@ async function runCreativeCycleUnlocked({
           payload: { candidate_id: selected.id, artifact_id: artifactId, artifact_hash: artifactHash, artifact_path: artifactPath }
         });
       }
-      artifactHash ??= sha256(await readFile(artifactPath));
+      const currentArtifactHash = sha256(await readFile(artifactPath));
+      if (artifactHash && artifactHash !== currentArtifactHash) {
+        throw new Error(`Artifact hash mismatch for ${artifactId ?? 'persisted artifact'}; refuse post-result evidence on changed bytes.`);
+      }
+      artifactHash ??= currentArtifactHash;
       artifactId ??= `artifact_legacy_${artifactHash.slice(0, 20)}`;
 
       if (!artifactAudit) {
@@ -364,7 +390,10 @@ async function runCreativeCycleUnlocked({
 
         let comparison = firstEvent('artifact_deviations_compared')?.payload;
         if (!comparison) {
-          const plan = normalizeCandidatePlan(selected);
+          const plan = normalizeCandidatePlan(selected, {
+            lockedIntention: intention,
+            lockEventId: firstEvent('intention_locked').event_id
+          });
           const comparisonOutput = await comparatorProvider.compareArtifactDeviation({
             lockedIntention: intention,
             plan,
@@ -384,10 +413,13 @@ async function runCreativeCycleUnlocked({
         if (!surpriseReview) {
           const reviewOutput = await surpriseReviewer.reviewSurprise({
             lockedIntention: intention,
-            plan: normalizeCandidatePlan(selected),
+            plan: normalizeCandidatePlan(selected, {
+              lockedIntention: intention,
+              lockEventId: firstEvent('intention_locked').event_id
+            }),
             witness,
             comparison,
-            priorWorks: baseState.canon.map(({ cycle_id, title, candidate_id }) => ({ cycle_id, title, candidate_id }))
+            priorWorks: completedPriorWorks(events, cycleId)
           });
           surpriseReview = buildReviewPayload({
             output: reviewOutput, witness, comparison, cycleId, artifactId, artifactHash,
