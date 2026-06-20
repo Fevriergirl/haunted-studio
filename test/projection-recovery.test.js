@@ -123,6 +123,7 @@ test('incomplete-cycle memory remains provenance and is not committed projection
     ['candidates_generated', {}],
     ['critics_reported', {}],
     ['curation_decided', { decision: 'accept', round: 0 }],
+    ['post_result_evidence_unavailable', { reason: 'conceptual_only_fixture' }],
     ['memory_consolidated', { motifs: { fabricated: 12 }, observation_counts: { fabricated: 12 }, active_surprises: [{ description: 'not committed' }], unresolved_tensions: ['not committed'] }]
   ];
   for (const [type, payload] of events) await studio.ledger.append({ type, actor: 'test', cycleId, payload });

@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import { copyFile, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { Studio } from '../src/core/studio.js';
 import { AppendOnlyLedger } from '../src/core/ledger.js';
 import { projectLedger } from '../src/core/projection.js';
 import { runCreativeCycle } from '../src/engine/creative-cycle.js';
 import { normalizeCandidatePlan } from '../src/engine/post-result-evidence.js';
+import { abandonCycle } from '../src/engine/recovery.js';
 import { DeterministicProvider } from '../src/providers/deterministic-provider.js';
 import { readJson } from '../src/core/fs.js';
+import { canonicalize } from '../src/core/canonical-json.js';
 
 const cwd = process.cwd();
 const constitution = await readJson(path.join(cwd, 'config', 'constitution.json'));
@@ -35,6 +38,7 @@ class EvidenceFixtureProvider extends DeterministicProvider {
     this.witnessCalls.push(structuredClone(input));
     const descriptions = {
       planned: 'The planned doubled edge is visible.',
+      planned_misclassified: 'The candidate plan appears in the artifact.',
       useful: 'An unplanned shadow joins two otherwise separate forms.',
       reject: 'An unplanned shadow joins two otherwise separate forms.',
       unsupported: 'A feature is asserted without visible support.',
@@ -50,6 +54,7 @@ class EvidenceFixtureProvider extends DeterministicProvider {
     this.comparisonCalls.push(structuredClone(input));
     const classification = {
       planned: 'planned_variation',
+      planned_misclassified: 'potentially_productive_surprise',
       useful: 'potentially_productive_surprise',
       reject: 'potentially_productive_surprise',
       unsupported: 'potentially_productive_surprise',
@@ -62,7 +67,7 @@ class EvidenceFixtureProvider extends DeterministicProvider {
       comparisons: [{
         witness_evidence_id: input.witness.observations[0].evidence_id,
         classification,
-        description: input.witness.observations[0].description,
+        description: this.scenario === 'planned_misclassified' ? input.plan.planned_ambiguities[0] : input.witness.observations[0].description,
         confidence: 0.88,
         explicitly_planned: this.scenario === 'planned',
         observable_support: this.scenario !== 'unsupported',
@@ -130,6 +135,12 @@ test('planned ambiguity realized as expected is not promoted to productive surpr
   assert.equal(result.postResultEvidence.comparisons[0].classification, 'planned_variation');
 });
 
+test('comparator cannot promote a known plan by falsely labeling it unplanned', async () => {
+  const { result } = await artifactCycle('planned_misclassified');
+  assert.equal(result.postResultEvidence.confirmed_surprises.length, 0);
+  assert.equal(result.postResultEvidence.reviewed[0].classification, 'rejected_accident');
+});
+
 test('unsupported deviation, technical defect, and random incoherence are not productive surprise', async (t) => {
   for (const scenario of ['unsupported', 'defect', 'noise']) {
     await t.test(scenario, async () => {
@@ -187,6 +198,27 @@ test('artifact hashes and linked evidence IDs are preserved', async () => {
   assert.equal(comparison.payload.witness_evidence_ids[0], witness.payload.observations[0].evidence_id);
   assert.equal(review.payload.comparison_evidence_id, comparison.payload.comparisons[0].evidence_id);
   assert.equal(result.postResultEvidence.confirmed_surprises[0].artifact_hash, artifact.payload.artifact_hash);
+  for (const field of ['evidence_id', 'cycle_id', 'artifact_id', 'source_role', 'source_type', 'timestamp', 'schema_version', 'locked_intention_event_id', 'confidence', 'classification', 'review_status', 'memory_eligible', 'later_used']) {
+    assert.ok(field in result.postResultEvidence.confirmed_surprises[0], `missing provenance field ${field}`);
+  }
+});
+
+test('creator, witness, comparator, and reviewer can be configured as isolated role providers', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-evidence-role-isolation-'));
+  const studio = new Studio({ rootDir, constitution, experiment });
+  const creator = new EvidenceFixtureProvider('useful');
+  const witness = new EvidenceFixtureProvider('useful');
+  const comparator = new EvidenceFixtureProvider('useful');
+  const reviewer = new EvidenceFixtureProvider('useful');
+  await runCreativeCycle({
+    studio, provider: creator, observations, generateImage: true, features: { refusal: false },
+    operationId: 'operation_role_isolation',
+    roleProviders: { creator, artifactWitness: witness, deviationComparator: comparator, surpriseReviewer: reviewer }
+  });
+  assert.equal(creator.witnessCalls.length, 0);
+  assert.equal(witness.witnessCalls.length, 1);
+  assert.equal(comparator.comparisonCalls.length, 1);
+  assert.equal(reviewer.reviewCalls.length, 1);
 });
 
 test('resume after each post-result boundary does not repeat persisted provider work or evidence', async (t) => {
@@ -212,6 +244,31 @@ test('resume after each post-result boundary does not repeat persisted provider 
         assert.equal(events.filter((event) => event.type === type).length, 1);
       }
       assert.equal(result.state.cycle_count, 1);
+    });
+  }
+});
+
+test('crashes before post-result persistence repeat only the unpersisted role call', async (t) => {
+  const cases = [
+    ['before_artifact_witnessed_persistence', [1, 0, 0], [2, 1, 1]],
+    ['before_artifact_deviations_compared_persistence', [1, 1, 0], [1, 2, 1]],
+    ['before_surprise_reviewed_persistence', [1, 1, 1], [1, 1, 2]]
+  ];
+  for (const [boundary, beforeCounts, afterCounts] of cases) {
+    await t.test(boundary, async () => {
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), `haunted-evidence-before-${boundary}-`));
+      const studio = new Studio({ rootDir, constitution, experiment });
+      const provider = new EvidenceFixtureProvider('useful');
+      const operationId = `operation_${boundary}`;
+      await assert.rejects(runCreativeCycle({
+        studio, provider, observations, generateImage: true, features: { refusal: false }, operationId, crashAfter: boundary
+      }), /injected crash/i);
+      assert.deepEqual([provider.witnessCalls.length, provider.comparisonCalls.length, provider.reviewCalls.length], beforeCounts);
+      await runCreativeCycle({
+        studio: new Studio({ rootDir, constitution, experiment }), provider, observations,
+        generateImage: true, features: { refusal: false }, operationId, resume: true
+      });
+      assert.deepEqual([provider.witnessCalls.length, provider.comparisonCalls.length, provider.reviewCalls.length], afterCounts);
     });
   }
 });
@@ -246,12 +303,45 @@ test('post-result evidence in an incomplete cycle is not committed memory', asyn
   const state = await restarted.initialize();
   assert.deepEqual(state.active_surprises, []);
   assert.equal(state.cycle_count, 0);
+  await abandonCycle({
+    studio: restarted,
+    operationId: 'operation_incomplete_evidence',
+    abandonmentOperationId: 'operation_abandon_incomplete_evidence'
+  });
+  assert.deepEqual((await restarted.getState()).active_surprises, []);
 });
 
 test('version-0 ledger remains readable and byte-for-byte unchanged', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'haunted-evidence-v0-'));
   const ledgerPath = path.join(directory, 'ledger.jsonl');
   await copyFile(legacyFixture, ledgerPath);
+  const before = await readFile(ledgerPath, 'utf8');
+  const ledger = new AppendOnlyLedger(ledgerPath);
+  assert.equal((await ledger.verify()).valid, true);
+  assert.equal(await readFile(ledgerPath, 'utf8'), before);
+});
+
+test('pre-PR-2A version-1 lifecycle remains readable and unchanged', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'haunted-evidence-v1-'));
+  const ledgerPath = path.join(directory, 'ledger.jsonl');
+  const types = [
+    ['cycle_started', {}], ['observation_selected', {}], ['intention_locked', {}],
+    ['candidates_generated', {}], ['critics_reported', {}],
+    ['curation_decided', { decision: 'accept', round: 0 }],
+    ['audience_predicted', {}], ['memory_consolidated', {}], ['cycle_completed', {}]
+  ];
+  let previousHash = '0'.repeat(64);
+  const lines = types.map(([type, payload], index) => {
+    const unsigned = {
+      event_id: `evt_legacy_v1_${index + 1}`, schema_version: 1, sequence: index + 1,
+      timestamp: `2025-01-01T00:00:${String(index).padStart(2, '0')}.000Z`, type,
+      actor: 'legacy-fixture', cycle_id: 'cycle_legacy_v1', payload, previous_hash: previousHash
+    };
+    const event = { ...unsigned, hash: createHash('sha256').update(canonicalize(unsigned)).digest('hex') };
+    previousHash = event.hash;
+    return JSON.stringify(event);
+  });
+  await writeFile(ledgerPath, `${lines.join('\n')}\n`);
   const before = await readFile(ledgerPath, 'utf8');
   const ledger = new AppendOnlyLedger(ledgerPath);
   assert.equal((await ledger.verify()).valid, true);
