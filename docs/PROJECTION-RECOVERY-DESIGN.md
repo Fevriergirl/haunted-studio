@@ -150,6 +150,8 @@ label; claims are excluded from fork copies and archived with the source studio.
 A retry recognizes only its own staging marker; an unrelated existing snapshot
 is never adopted as an interrupted fork. If the parent changes during copying,
 the unpublished staging copy is discarded and the caller must retry.
+An unmarked staging directory has unproven ownership and is preserved; recovery
+stops with a manual inspection instruction instead of deleting it.
 
 ## Crash-boundary contract
 

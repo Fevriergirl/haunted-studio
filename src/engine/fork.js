@@ -79,8 +79,7 @@ async function forkStudioUnlocked({ studio, targetRoot, label, operationId, cras
 
   if (await exists(stagingRoot)) {
     if (!(await exists(markerPath))) {
-      await rm(stagingRoot, { recursive: true, force: true });
-      return forkStudioUnlocked({ studio, targetRoot, label, operationId, crashAfter });
+      throw new Error(`Unmarked fork staging directory has unknown ownership and was preserved: ${stagingRoot}. Inspect or move it manually before retrying.`);
     }
     marker = await readJson(markerPath);
     if (marker.operation_id !== operationId || marker.operation_fingerprint !== fingerprint) {
