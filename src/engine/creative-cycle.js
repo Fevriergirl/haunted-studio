@@ -8,6 +8,7 @@ import { runCriticPanel } from '../roles/critics.js';
 import { curate } from '../roles/curator.js';
 import { consolidate } from '../roles/memory.js';
 import { resolveFeatures } from '../experiment/conditions.js';
+import { terminalEventForCycle } from '../core/event-contract.js';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -82,20 +83,25 @@ export async function runCreativeCycle({
       state: agentState,
       constitution: studio.constitution
     });
-    const intentionRecord = {
-      cycle_id: cycleId,
-      locked_at: new Date().toISOString(),
+    const intentionContent = {
       observation_id: attention.observation.id,
       necessity,
       intention
     };
-    const intentionHash = sha256(canonicalize(intentionRecord));
+    const intentionHash = sha256(canonicalize(intentionContent));
+    const intentionRecord = {
+      cycle_id: cycleId,
+      locked_at: new Date().toISOString(),
+      ...intentionContent,
+      intention_commitment: intentionHash,
+      intention_hash: intentionHash
+    };
     await studio.writeCycleFile(cycleId, '02-locked-intention.json', { ...intentionRecord, intention_hash: intentionHash });
     await studio.ledger.append({
       type: 'intention_locked',
       actor: 'role:artist',
       cycleId,
-      payload: { ...intentionRecord, intention_hash: intentionHash }
+      payload: intentionRecord
     });
 
     const candidates = await makeCandidates({
@@ -328,12 +334,15 @@ export async function runCreativeCycle({
 
     return { cycleId, attention, necessity, intention, intentionHash, candidates: workingCandidates, critiques: workingCritiques, curation, selected, artifactPath, artifactAudit, canonStatus, audiencePrediction, memory, state: nextState, verification };
   } catch (error) {
-    await studio.ledger.append({
-      type: 'cycle_failed',
-      actor: 'orchestrator',
-      cycleId,
-      payload: { name: error.name, message: error.message }
-    });
+    const events = await studio.ledger.readAll();
+    if (!terminalEventForCycle(events, cycleId)) {
+      await studio.ledger.append({
+        type: 'cycle_failed',
+        actor: 'orchestrator',
+        cycleId,
+        payload: { name: error.name, message: error.message }
+      });
+    }
     throw error;
   }
 }
