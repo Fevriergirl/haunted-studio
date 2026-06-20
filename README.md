@@ -248,6 +248,13 @@ recovery event:
 node src/cli.js abandon cycle-request-001 --operation-id abandon-request-001
 ```
 
+A legacy incomplete cycle that predates operation identities cannot be resumed.
+Terminate it explicitly by its recorded cycle identity:
+
+```bash
+node src/cli.js abandon --cycle-id cycle_legacy --operation-id abandon-request-legacy
+```
+
 The same `--operation-id` option applies to review, correct-memory, and fork
 commands. Matching retries are no-ops; conflicting payloads are rejected.
 See [projection recovery and idempotency](docs/PROJECTION-RECOVERY-DESIGN.md)

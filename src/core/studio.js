@@ -5,6 +5,7 @@ import { canonicalize } from './canonical-json.js';
 import { ensureDir, readJson, writeJsonAtomic } from './fs.js';
 import { id } from './ids.js';
 import { INITIAL_STATE, projectLedger } from './projection.js';
+import { serializeOperation } from './operations.js';
 
 export const DEFAULT_STATE = INITIAL_STATE;
 
@@ -43,6 +44,10 @@ export class Studio {
   }
 
   async initialize() {
+    return serializeOperation(`studio-initialize:${this.rootDir}`, () => this.initializeUnlocked());
+  }
+
+  async initializeUnlocked() {
     await ensureDir(this.rootDir);
     await ensureDir(this.worksDir);
     let events = await this.ledger.readAll();
@@ -52,7 +57,12 @@ export class Studio {
         const claimsHistory = (orphanedState.ledger_head?.sequence ?? 0) > 0 ||
           (orphanedState.cycle_count ?? 0) > 0 ||
           (orphanedState.canon?.length ?? 0) > 0 ||
-          (orphanedState.rejected?.length ?? 0) > 0;
+          (orphanedState.rejected?.length ?? 0) > 0 ||
+          Object.keys(orphanedState.motifs ?? {}).length > 0 ||
+          (orphanedState.audience_findings?.length ?? 0) > 0 ||
+          (orphanedState.corrections?.length ?? 0) > 0 ||
+          (orphanedState.active_surprises?.length ?? 0) > 0 ||
+          (orphanedState.unresolved_tensions?.length ?? 0) > 0;
         if (claimsHistory) {
           throw new Error('Projected state is ahead of ledger: the ledger is empty but state claims history.');
         }
@@ -73,7 +83,7 @@ export class Studio {
     const state = await readJson(this.statePath);
     if (!state.ledger_head) return this.saveProjection(expected, 'legacy_state_rebuilt');
     if (state.ledger_head.sequence > expected.ledger_head.sequence) {
-      throw new Error(`Projected state is ahead of ledger: state=${state.ledger_head.sequence}, ledger=${expected.ledger_head.sequence}.`);
+      throw new Error(`Projected state is ahead of ledger: state=${state.ledger_head.sequence}, ledger=${expected.ledger_head.sequence}. Back up state.json, then run node src/cli.js rebuild-state.`);
     }
     if (state.ledger_head.sequence < expected.ledger_head.sequence) {
       const claimed = state.ledger_head.sequence === 0 ? INITIAL_STATE.ledger_head : {
@@ -82,11 +92,11 @@ export class Studio {
         event_hash: events[state.ledger_head.sequence - 1]?.hash,
         schema_version: events[state.ledger_head.sequence - 1]?.schema_version ?? 0
       };
-      if (!sameHead(state.ledger_head, claimed)) throw new Error('Projected state has a divergent ledger-head identity.');
+      if (!sameHead(state.ledger_head, claimed)) throw new Error('Projected state has a divergent ledger-head identity. Back up state.json, then run node src/cli.js rebuild-state.');
       return this.saveProjection(expected, 'stale_state_rebuilt');
     }
     if (!sameHead(state.ledger_head, expected.ledger_head)) {
-      throw new Error('Projected state has a divergent ledger-head identity.');
+      throw new Error('Projected state has a divergent ledger-head identity. Back up state.json, then run node src/cli.js rebuild-state.');
     }
     if (canonicalize(state) !== canonicalize(expected)) {
       return this.saveProjection(expected, 'content_mismatch_rebuilt');
@@ -104,14 +114,23 @@ export class Studio {
   }
 
   async saveProjection(state, action = 'projected') {
+    return serializeOperation(`projection-write:${this.statePath}`, async () => {
+      return this.saveProjectionUnlocked(state, action);
+    });
+  }
+
+  async saveProjectionUnlocked(state, action) {
     await this.saveState(state);
     this.lastProjectionStatus = { action, ledger_head: state.ledger_head };
     return state;
   }
 
   async projectAndSave(action = 'live_projection') {
-    const events = await this.verifiedEvents();
-    return this.saveProjection(projectLedger(events), action);
+    return serializeOperation(`projection-write:${this.statePath}`, async () => {
+      const events = await this.verifiedEvents();
+      const state = projectLedger(events);
+      return this.saveProjectionUnlocked(state, action);
+    });
   }
 
   cycleDirectory(cycleId) {

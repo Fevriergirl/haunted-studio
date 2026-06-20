@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from '../core/fs.js';
 import { id } from '../core/ids.js';
-import { assertOperationCompatible, operationFingerprint, operationIdentity } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
 import { maybeInjectCrash } from '../core/crash-injection.js';
 
 function requireText(value, field) {
@@ -37,14 +37,20 @@ function normalizedReview(input, cycleId) {
   };
 }
 
-export async function recordHumanReview({ studio, cycleId, reviewFile, operationId, crashAfter = null }) {
+export async function recordHumanReview(options) {
+  const resolvedOperationId = operationIdentity(options.operationId, 'review-operation');
+  return serializeOperation(`human-review:${options.studio.rootDir}:${resolvedOperationId}`, () =>
+    recordHumanReviewUnlocked({ ...options, operationId: resolvedOperationId }));
+}
+
+async function recordHumanReviewUnlocked({ studio, cycleId, reviewFile, operationId, crashAfter = null }) {
   await studio.initialize();
   const events = await studio.ledger.readAll();
   const manifest = events.find((event) => event.type === 'cycle_completed' && event.cycle_id === cycleId)?.payload;
   if (!manifest) throw new Error(`Cycle ${cycleId} is not completed.`);
   if (!manifest.selected_candidate) throw new Error(`Cycle ${cycleId} has no accepted candidate to review.`);
   const normalized = normalizedReview(await readJson(reviewFile), cycleId);
-  const resolvedOperationId = operationIdentity(operationId, 'review-operation');
+  const resolvedOperationId = operationId;
   const fingerprint = operationFingerprint({ kind: 'human_review', ...normalized });
   const prior = assertOperationCompatible(events, resolvedOperationId, fingerprint)
     .find((event) => event.type === 'human_review_recorded');

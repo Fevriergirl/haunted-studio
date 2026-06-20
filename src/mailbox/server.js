@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { assertOperationCompatible } from '../core/operations.js';
+import { maybeInjectCrash } from '../core/crash-injection.js';
 
 const MAX_BODY_BYTES = 1_000_000;
 
@@ -34,7 +35,8 @@ async function readBody(request) {
   }
 }
 
-export function startMailboxServer({ mailbox, ledger, port = 19820, host = '127.0.0.1' }) {
+export function startMailboxServer({ mailbox, ledger, port = 19820, host = '127.0.0.1', crashAfter = null }) {
+  let crashInjected = false;
   const server = http.createServer(async (request, response) => {
     try {
       if (request.method === 'GET' && request.url === '/health') {
@@ -59,6 +61,10 @@ export function startMailboxServer({ mailbox, ledger, port = 19820, host = '127.
               operation_fingerprint: message.operation_fingerprint
             }
           });
+        }
+        if (!crashInjected && crashAfter === 'mailbox_message_received') {
+          crashInjected = true;
+          maybeInjectCrash(crashAfter, 'mailbox_message_received');
         }
         return sendJson(response, 202, { message_id: message.message_id, status: 'received' });
       }

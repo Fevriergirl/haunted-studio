@@ -19,7 +19,10 @@ const observations = await readJson(path.join(cwd, 'observations', 'seed-observa
 async function completedStudio(prefix) {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), prefix));
   const studio = new Studio({ rootDir, constitution, experiment });
-  const cycle = await runCreativeCycle({ studio, provider: new DeterministicProvider(), observations, operationId: `${prefix}_cycle` });
+  const cycle = await runCreativeCycle({
+    studio, provider: new DeterministicProvider(), observations,
+    operationId: `${prefix}_cycle`, features: { refusal: false }
+  });
   return { rootDir, studio, cycle };
 }
 

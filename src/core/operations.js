@@ -2,6 +2,22 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from './canonical-json.js';
 import { id } from './ids.js';
 
+const operationQueues = new Map();
+
+export async function serializeOperation(key, operation) {
+  const previous = operationQueues.get(key) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  operationQueues.set(key, current);
+  await previous.catch(() => {});
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (operationQueues.get(key) === current) operationQueues.delete(key);
+  }
+}
+
 export function operationFingerprint(value) {
   return createHash('sha256').update(canonicalize(value)).digest('hex');
 }

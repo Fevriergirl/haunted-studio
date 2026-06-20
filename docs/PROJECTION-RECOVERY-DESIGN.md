@@ -80,6 +80,9 @@ An incomplete operation has two explicit paths:
 2. Abandon it explicitly. Abandonment appends the lifecycle's legal
    `cycle_failed` event with recovery provenance; no history is removed.
 
+Legacy incomplete cycles without an operation identity cannot be resumed.
+They can be explicitly terminated by cycle identity with `abandon --cycle-id`.
+
 No new `cycle_abandoned` event is introduced because PR 1A intentionally uses
 `cycle_failed` for a terminated incomplete operation.
 
@@ -145,15 +148,21 @@ Deterministic tests inject abrupt failure after these persisted boundaries:
 - candidate generation;
 - criticism;
 - curation;
-- revision;
+- acceptance override;
+- revision and revision criticism;
+- final curation;
 - artifact record;
 - artifact audit;
+- artifact-audit failure record;
 - audience prediction;
 - memory consolidation;
 - completion append;
 - projected-state save;
 - human-review event append;
-- memory-correction event append.
+- memory-correction event append;
+- mailbox receipt and consumption;
+- explicit abandonment;
+- fork copy and fork-provenance append.
 
 After restart, the ledger must verify, startup must follow the decision table,
 and explicit retry/resume must not duplicate events or projection effects.

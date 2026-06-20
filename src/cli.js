@@ -195,10 +195,12 @@ async function main() {
   if (parsed.command === 'abandon') {
     await studio.initialize();
     const [operationId] = parsed.positionals;
-    if (!operationId) throw new Error('Usage: node src/cli.js abandon <cycle-operation-id> [--operation-id <abandonment-operation-id>]');
+    const cycleId = parsed.values['cycle-id'] ?? null;
+    if (!operationId && !cycleId) throw new Error('Usage: node src/cli.js abandon <cycle-operation-id> [--cycle-id <legacy-cycle-id>] [--operation-id <abandonment-operation-id>]');
     const event = await abandonCycle({
       studio,
       operationId,
+      cycleId,
       abandonmentOperationId: parsed.values['operation-id'] ?? null
     });
     console.log(`Abandoned incomplete cycle with terminal event ${event.event_id}.`);
@@ -217,7 +219,6 @@ async function main() {
   }
 
   if (parsed.command === 'rebuild-state') {
-    await studio.initialize();
     const state = await studio.rebuildStateFromLedger();
     console.log(`Rebuilt state projection from the append-only ledger. Cycles: ${state.cycle_count}`);
     return;

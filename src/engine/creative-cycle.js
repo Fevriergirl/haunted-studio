@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../core/canonical-json.js';
 import { id } from '../core/ids.js';
 import { InjectedCrashError, maybeInjectCrash } from '../core/crash-injection.js';
-import { assertOperationCompatible, operationFingerprint, operationIdentity } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
+import { projectLedger } from '../core/projection.js';
 import { terminalEventForCycle } from '../core/event-contract.js';
 import { chooseObservation } from '../roles/attention.js';
 import { formAndLockIntention, makeCandidates } from '../roles/artist.js';
@@ -14,6 +15,12 @@ import { resolveFeatures } from '../experiment/conditions.js';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function curationResult(payload) {
+  if (!payload) return payload;
+  const { round: _round, ...result } = payload;
+  return result;
 }
 
 function cycleResultFromEvents({ events, cycleId, operationId, state, verification, resumed = false }) {
@@ -55,7 +62,15 @@ function cycleResultFromEvents({ events, cycleId, operationId, state, verificati
   };
 }
 
-export async function runCreativeCycle({
+export async function runCreativeCycle(options) {
+  const resolvedOperationId = operationIdentity(options.operationId, 'cycle-operation');
+  return serializeOperation(
+    `creative-cycle:${options.studio.rootDir}:${resolvedOperationId}`,
+    () => runCreativeCycleUnlocked({ ...options, operationId: resolvedOperationId })
+  );
+}
+
+async function runCreativeCycleUnlocked({
   studio,
   provider,
   observations,
@@ -70,7 +85,7 @@ export async function runCreativeCycle({
 }) {
   const state = await studio.initialize();
   const activeFeatures = resolveFeatures(features);
-  const resolvedOperationId = operationIdentity(operationId, 'cycle-operation');
+  const resolvedOperationId = operationId;
   const fingerprint = operationFingerprint({
     kind: 'creative_cycle',
     provider: provider.name,
@@ -79,7 +94,8 @@ export async function runCreativeCycle({
     condition,
     ablate_memory: ablateMemory,
     features: activeFeatures,
-    experiment: studio.experiment
+    experiment: studio.experiment,
+    constitution: studio.constitution
   });
   let events = await studio.ledger.readAll();
   const operationEvents = assertOperationCompatible(events, resolvedOperationId, fingerprint);
@@ -91,6 +107,10 @@ export async function runCreativeCycle({
   if (!started && resume) throw new Error(`Cannot resume unknown operation ${resolvedOperationId}.`);
 
   const cycleId = started?.cycle_id ?? cycleIdOverride ?? id('cycle');
+  const cycleOwner = events.find((event) => event.type === 'cycle_started' && event.cycle_id === cycleId);
+  if (cycleOwner && cycleOwner.payload?.operation_id !== resolvedOperationId) {
+    throw new Error(`Cycle identity conflict for ${cycleId}: it belongs to another operation.`);
+  }
   const existingTerminal = terminalEventForCycle(events, cycleId);
   if (existingTerminal?.type === 'cycle_completed') {
     const projected = await studio.projectAndSave('idempotent_cycle_retry');
@@ -105,10 +125,11 @@ export async function runCreativeCycle({
   if (started && !resume) throw new Error(`Operation ${resolvedOperationId} has an incomplete cycle; explicit resume is required.`);
   if (!started && state.cycle_count >= studio.experiment.budgets.maximum_cycles) throw new Error('Maximum cycle budget reached.');
 
+  const baseState = started ? projectLedger(events.slice(0, events.indexOf(started))) : state;
   const memoryAblated = ablateMemory || !activeFeatures.autobiographicalMemory;
   const memoryView = memoryAblated
-    ? { ...state, motifs: {}, observation_counts: {}, active_surprises: [], unresolved_tensions: [], audience_findings: [] }
-    : state;
+    ? { ...baseState, motifs: {}, observation_counts: {}, active_surprises: [], unresolved_tensions: [], audience_findings: [] }
+    : baseState;
   const agentState = activeFeatures.surpriseCarryover ? memoryView : { ...memoryView, active_surprises: [] };
   const ablations = [
     ...(!activeFeatures.autobiographicalMemory ? ['autobiographical_memory'] : []),
@@ -139,7 +160,8 @@ export async function runCreativeCycle({
           prior_cycle_count: state.cycle_count,
           condition,
           features: activeFeatures,
-          ablations
+          ablations,
+          starting_ledger_head: baseState.ledger_head
         }
       });
     }
@@ -199,7 +221,7 @@ export async function runCreativeCycle({
 
     let workingCandidates = candidates;
     let workingCritiques = critiques;
-    let curation = cycleEvents().filter((event) => event.type === 'curation_decided')[0]?.payload;
+    let curation = curationResult(cycleEvents().filter((event) => event.type === 'curation_decided')[0]?.payload);
     if (!curation) {
       curation = await curate({
         provider, candidates: workingCandidates, critiques: workingCritiques, intention, state: agentState,
@@ -224,7 +246,7 @@ export async function runCreativeCycle({
         original_decision: originalDecision,
         rationale: `Forced acceptance condition overrode the curator. Original decision: ${originalDecision}. ${curation.rationale}`
       };
-      await append({ type: 'curation_overridden_by_condition', actor: 'experiment-orchestrator', payload: curation });
+      await append({ type: 'curation_overridden_by_condition', actor: 'experiment-orchestrator', payload: curation }, 'curation_overridden_by_condition');
     }
 
     if (curation.decision === 'revise') {
@@ -252,7 +274,7 @@ export async function runCreativeCycle({
       }
       workingCandidates = [...workingCandidates.filter((candidate) => candidate.id !== original.id), revised];
       workingCritiques = [...workingCritiques.filter((critique) => critique.candidate_id !== original.id), revisedCritique];
-      const finalCuration = cycleEvents().filter((event) => event.type === 'curation_decided')[1]?.payload;
+      const finalCuration = curationResult(cycleEvents().filter((event) => event.type === 'curation_decided')[1]?.payload);
       if (finalCuration) {
         curation = finalCuration;
       } else {
@@ -261,7 +283,7 @@ export async function runCreativeCycle({
           constitution: studio.constitution, experiment: studio.experiment, allowRevision: false
         });
         await studio.writeCycleFile(cycleId, '05c-final-curation.json', curation);
-        await append({ type: 'curation_decided', actor: 'role:curator', payload: { round: 1, ...curation } });
+        await append({ type: 'curation_decided', actor: 'role:curator', payload: { round: 1, ...curation } }, 'final_curation_decided');
       }
     }
 
@@ -318,7 +340,7 @@ export async function runCreativeCycle({
     if (!memory) {
       memory = await consolidate({
         provider, observation: attention.observation, selection: selected, critiques: workingCritiques,
-        curation, state, constitution: studio.constitution
+        curation, state: baseState, constitution: studio.constitution
       });
       if (!activeFeatures.surpriseCarryover) memory.active_surprises = [];
       await studio.writeCycleFile(cycleId, '07-memory-consolidation.json', memory);

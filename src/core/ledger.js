@@ -73,6 +73,21 @@ export class AppendOnlyLedger {
   }) {
     return serializeAppend(this.filePath, async () => {
       const events = await this.readAll();
+      const operationId = payload?.operation_id;
+      if (operationId !== undefined) {
+        if (typeof operationId !== 'string' || operationId.trim().length === 0) {
+          throw new Error('Ledger operation_id must be a non-empty string.');
+        }
+        if (typeof payload.operation_fingerprint !== 'string' || payload.operation_fingerprint.length === 0) {
+          throw new Error('Ledger operation_fingerprint must be a non-empty string when operation_id is present.');
+        }
+        const operationEvents = events.filter((event) => event.payload?.operation_id === operationId);
+        if (operationEvents.some((event) => event.payload.operation_fingerprint !== payload.operation_fingerprint)) {
+          throw new Error(`Operation conflict for ${operationId}: the recorded payload differs.`);
+        }
+        const repeated = operationEvents.find((event) => event.type === type);
+        if (repeated) return repeated;
+      }
       validateEventBeforeAppend({ type, actor, cycleId, payload, schemaVersion }, events);
       const previous = events.at(-1);
       const unsigned = {

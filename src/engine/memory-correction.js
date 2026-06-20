@@ -1,8 +1,14 @@
 import { readJson } from '../core/fs.js';
-import { assertOperationCompatible, operationFingerprint, operationIdentity } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
 import { maybeInjectCrash } from '../core/crash-injection.js';
 
-export async function recordMemoryCorrection({ studio, correctionFile, operationId, crashAfter = null }) {
+export async function recordMemoryCorrection(options) {
+  const resolvedOperationId = operationIdentity(options.operationId, 'correction-operation');
+  return serializeOperation(`memory-correction:${options.studio.rootDir}:${resolvedOperationId}`, () =>
+    recordMemoryCorrectionUnlocked({ ...options, operationId: resolvedOperationId }));
+}
+
+async function recordMemoryCorrectionUnlocked({ studio, correctionFile, operationId, crashAfter = null }) {
   await studio.initialize();
   const correction = await readJson(correctionFile);
   if (!correction.target_event_id || !correction.reason || !correction.corrected_interpretation) {
@@ -12,7 +18,7 @@ export async function recordMemoryCorrection({ studio, correctionFile, operation
   if (!events.some((event) => event.event_id === correction.target_event_id)) {
     throw new Error(`Target event does not exist: ${correction.target_event_id}`);
   }
-  const resolvedOperationId = operationIdentity(operationId, 'correction-operation');
+  const resolvedOperationId = operationId;
   const fingerprint = operationFingerprint({ kind: 'memory_correction', correction });
   const prior = assertOperationCompatible(events, resolvedOperationId, fingerprint)
     .find((event) => event.type === 'memory_corrected');
