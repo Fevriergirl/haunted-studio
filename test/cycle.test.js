@@ -39,3 +39,31 @@ test('later cycles inherit motifs and unresolved tensions', async () => {
   assert.ok(Object.keys(second.state.motifs).length > 0);
   assert.ok(second.state.unresolved_tensions.length > 0);
 });
+
+test('intention commitment is stable across event timestamps and separate from lock metadata', async () => {
+  const firstRoot = await mkdtemp(path.join(os.tmpdir(), 'haunted-intention-first-'));
+  const secondRoot = await mkdtemp(path.join(os.tmpdir(), 'haunted-intention-second-'));
+  const firstStudio = new Studio({ rootDir: firstRoot, constitution, experiment });
+  const secondStudio = new Studio({ rootDir: secondRoot, constitution, experiment });
+
+  const first = await runCreativeCycle({
+    studio: firstStudio,
+    provider: new DeterministicProvider(),
+    observations,
+    cycleIdOverride: 'cycle_stable_commitment'
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const second = await runCreativeCycle({
+    studio: secondStudio,
+    provider: new DeterministicProvider(),
+    observations,
+    cycleIdOverride: 'cycle_stable_commitment'
+  });
+
+  assert.equal(first.intentionHash, second.intentionHash);
+  const [firstLock] = (await firstStudio.ledger.readAll()).filter((event) => event.type === 'intention_locked');
+  const [secondLock] = (await secondStudio.ledger.readAll()).filter((event) => event.type === 'intention_locked');
+  assert.equal(firstLock.payload.intention_commitment, secondLock.payload.intention_commitment);
+  assert.equal(firstLock.payload.intention_hash, firstLock.payload.intention_commitment);
+  assert.notEqual(firstLock.payload.locked_at, secondLock.payload.locked_at);
+});
