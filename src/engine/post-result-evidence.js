@@ -150,12 +150,18 @@ export function buildComparisonPayload({ output, witness, plan = {}, cycleId, ar
       }
       const description = requireText(comparison.description, `comparisons[${index}].description`);
       const normalizedDescription = description.toLowerCase();
-      const suppliedPlanIds = requireArray(comparison.related_plan_item_ids ?? [], `comparisons[${index}].related_plan_item_ids`);
+      // Authoritative plan links must be supplied explicitly by the comparator
+      // and validated against the committed plan. Only these establish that a
+      // result was planned.
+      const suppliedPlanIds = [...new Set(requireArray(comparison.related_plan_item_ids ?? [], `comparisons[${index}].related_plan_item_ids`))];
       if (suppliedPlanIds.some((itemId) => !planById.has(itemId))) throw new Error(`comparisons[${index}] references unknown plan item.`);
-      const matchedPlanIds = [...planById.values()]
+      // Text containment is a non-authoritative warning only. It surfaces a
+      // possible plan link for the adversarial reviewer to weigh, but it never
+      // silently sets explicitly_planned or establishes an authoritative link.
+      const textSimilarPlanIds = [...planById.values()]
         .filter((item) => normalizedDescription.includes(item.description.toLowerCase()) || item.description.toLowerCase().includes(normalizedDescription))
-        .map((item) => item.plan_item_id);
-      const relatedPlanItemIds = [...new Set([...suppliedPlanIds, ...matchedPlanIds])];
+        .map((item) => item.plan_item_id)
+        .filter((planId) => !suppliedPlanIds.includes(planId));
       return {
         ...baseEvidence({
           cycleId, artifactId, artifactHash, lockEventId,
@@ -165,8 +171,9 @@ export function buildComparisonPayload({ output, witness, plan = {}, cycleId, ar
         }),
         witness_evidence_id: comparison.witness_evidence_id,
         description,
-        explicitly_planned: comparison.explicitly_planned === true || relatedPlanItemIds.length > 0,
-        related_plan_item_ids: relatedPlanItemIds,
+        explicitly_planned: comparison.explicitly_planned === true || suppliedPlanIds.length > 0,
+        related_plan_item_ids: suppliedPlanIds,
+        text_similar_plan_item_ids: textSimilarPlanIds,
         observable_support: comparison.observable_support === true,
         coherent: comparison.coherent === true,
         material_interpretive_change: comparison.material_interpretive_change === true,
@@ -257,7 +264,7 @@ export function buildReviewPayload({ output, witness, comparison, cycleId, artif
   return {
     artifact_id: artifactId,
     artifact_hash: artifactHash,
-    comparison_evidence_id: comparison.comparisons[0]?.evidence_id ?? null,
+    comparison_evidence_ids: comparison.comparisons.map((item) => item.evidence_id),
     no_productive_surprise: reviewed.every((item) => item.classification !== 'productive_surprise'),
     reviewed_evidence: reviewed
   };

@@ -174,6 +174,12 @@ test('comparator cannot promote a known plan by falsely labeling it unplanned', 
   const { result } = await artifactCycle('planned_misclassified');
   assert.equal(result.postResultEvidence.confirmed_surprises.length, 0);
   assert.equal(result.postResultEvidence.reviewed[0].classification, 'rejected_accident');
+  // Text matching the committed plan is recorded only as a non-authoritative
+  // warning; it never silently marks the result as explicitly planned.
+  const comparison = result.postResultEvidence.comparisons[0];
+  assert.equal(comparison.explicitly_planned, false);
+  assert.deepEqual(comparison.related_plan_item_ids, []);
+  assert.ok(comparison.text_similar_plan_item_ids.length > 0);
 });
 
 test('anticipated risk cannot be confirmed as productive surprise', async () => {
@@ -256,7 +262,7 @@ test('artifact hashes and linked evidence IDs are preserved', async () => {
   const review = events.find((event) => event.type === 'surprise_reviewed');
   assert.equal(witness.payload.artifact_hash, artifact.payload.artifact_hash);
   assert.equal(comparison.payload.witness_evidence_ids[0], witness.payload.observations[0].evidence_id);
-  assert.equal(review.payload.comparison_evidence_id, comparison.payload.comparisons[0].evidence_id);
+  assert.deepEqual(review.payload.comparison_evidence_ids, comparison.payload.comparisons.map((item) => item.evidence_id));
   assert.equal(result.postResultEvidence.confirmed_surprises[0].artifact_hash, artifact.payload.artifact_hash);
   for (const field of ['evidence_id', 'cycle_id', 'artifact_id', 'source_role', 'source_type', 'timestamp', 'schema_version', 'locked_intention_event_id', 'confidence', 'classification', 'review_status', 'memory_eligible', 'later_used']) {
     assert.ok(field in result.postResultEvidence.confirmed_surprises[0], `missing provenance field ${field}`);

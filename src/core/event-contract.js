@@ -194,6 +194,13 @@ function validatePostResultEvidence(type, payload, cycleId, events) {
       if (!Array.isArray(item.related_plan_item_ids) || item.related_plan_item_ids.some((planId) => !planIds.has(planId))) {
         throw new Error(`comparison evidence ${index} has an unknown related plan item.`);
       }
+      // Text-similarity links are an optional, non-authoritative warning. When
+      // present they must still reference committed plan items, but they never
+      // drive the planned classification.
+      if (item.text_similar_plan_item_ids !== undefined &&
+          (!Array.isArray(item.text_similar_plan_item_ids) || item.text_similar_plan_item_ids.some((planId) => !planIds.has(planId)))) {
+        throw new Error(`comparison evidence ${index} has an unknown text-similar plan item.`);
+      }
       if (item.explicitly_planned !== (item.related_plan_item_ids.length > 0 || item.explicitly_planned === true)) {
         throw new Error(`comparison evidence ${index} has inconsistent planned classification.`);
       }

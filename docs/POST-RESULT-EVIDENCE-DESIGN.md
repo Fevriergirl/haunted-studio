@@ -151,7 +151,15 @@ curation_decided/curation_overridden_by_condition
 Rejected cycles may proceed directly to memory as before because no artifact or
 artifact surprise is claimed. Invalid evidence ordering is rejected before
 persistence. Crash injection is supported after witness, comparison, and review
-events; resume reuses each persisted result and does not repeat provider calls.
+events.
+
+Resume reuses any result that was already persisted as a ledger event and does
+not re-run the provider for that step. Persisted evidence is therefore not
+duplicated. However, exactly-once provider execution is not guaranteed: a
+provider call happens before its result is persisted, so if a crash occurs
+after the provider returns but before the corresponding event is written, the
+resumed run will call that provider again. The protocol guarantees at-most-once
+persistence per step, not at-most-once provider invocation.
 
 ## Projection and commitment
 
@@ -181,6 +189,25 @@ quality, novelty, or development. The deterministic provider supplies fixtures,
 not empirical evidence. Artifact inspection quality still depends on the
 provider and artifact representation. PR 2B will address how typed evidence
 enters autobiographical memory and how later causal use is recorded.
+
+The `artifact_hash` proves only byte identity of the recorded file: that the
+witnessed, compared, and reviewed bytes are the same bytes that were persisted.
+It does not prove that those bytes decode to a valid image, that the media type
+is correct, that the dimensions are sane or safe, or that any semantic visual
+content was inspected. A matching hash on corrupt, truncated, mislabeled, or
+adversarial bytes is still a match. Pixel-level and media-validity claims
+require actual image inspection by a capable role, which is independent of the
+hash check.
+
+Plan-link provenance is explicit. A comparison records authoritative plan links
+only in `related_plan_item_ids`, supplied by the comparator and validated
+against the committed plan. Text containment or similarity is recorded
+separately in `text_similar_plan_item_ids` as a non-authoritative warning for
+the adversarial reviewer; it never sets `explicitly_planned` and never disqualifies
+a surprise on its own. When a cycle produces several comparisons, the surprise
+review records the complete stable list `comparison_evidence_ids`, and each
+reviewed item additionally carries its own validated `comparison_evidence_id`
+link, so no provenance is reduced to a misleading first-item-only field.
 
 The existing experiment weight key `productive_surprise` remains unchanged for
 configuration compatibility in this PR. It now weights the explicitly
