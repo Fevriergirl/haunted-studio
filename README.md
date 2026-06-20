@@ -274,6 +274,8 @@ node src/cli.js fork .haunted-studio-branch-a "different observations" --operati
 Fork publication uses an operation-specific staging directory and verifies the
 copied ledger head before the target path appears. Retry with the same operation
 ID after an interrupted fork; do not manually repurpose staging directories.
+Source-scoped operation claims are runtime recovery metadata and are archived
+with the studio, not copied into the fork.
 
 Run the fork with `HAUNTED_STUDIO_HOME` pointing to that directory.
 

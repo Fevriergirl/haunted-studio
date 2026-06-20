@@ -144,6 +144,9 @@ result.
 Forks copy into an operation-specific staging directory, verify that the copied
 ledger exactly matches the intended parent head, append fork provenance, rebuild
 the staged projection, and only then publish by renaming the staging directory.
+A source-scoped operation claim under the runtime `.operations/` directory
+prevents the same operation ID from being reused for a different target or
+label; claims are excluded from fork copies and archived with the source studio.
 A retry recognizes only its own staging marker; an unrelated existing snapshot
 is never adopted as an interrupted fork. If the parent changes during copying,
 the unpublished staging copy is discarded and the caller must retry.

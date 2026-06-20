@@ -45,6 +45,22 @@ async function forkStudioUnlocked({ studio, targetRoot, label, operationId, cras
     label,
     parent_studio: operationScopePath(studio.rootDir)
   });
+  const operationClaimPath = path.join(
+    studio.rootDir,
+    '.operations', 'forks',
+    `${operationFingerprint({ operation_id: operationId })}.json`
+  );
+  if (await exists(operationClaimPath)) {
+    const claim = await readJson(operationClaimPath);
+    if (claim.operation_id !== operationId || claim.operation_fingerprint !== fingerprint) {
+      throw new Error(`Operation conflict for ${operationId}: the recorded fork request differs.`);
+    }
+  } else {
+    await writeJsonAtomic(operationClaimPath, {
+      operation_id: operationId,
+      operation_fingerprint: fingerprint
+    });
+  }
 
   if (await exists(targetRoot)) {
     const targetStudio = new Studio({ rootDir: targetRoot, constitution: studio.constitution, experiment: studio.experiment });
@@ -62,9 +78,12 @@ async function forkStudioUnlocked({ studio, targetRoot, label, operationId, cras
   let marker;
 
   if (await exists(stagingRoot)) {
+    if (!(await exists(markerPath))) {
+      await rm(stagingRoot, { recursive: true, force: true });
+      return forkStudioUnlocked({ studio, targetRoot, label, operationId, crashAfter });
+    }
     marker = await readJson(markerPath);
-    if (marker.operation_id !== operationId || marker.operation_fingerprint !== fingerprint ||
-      operationScopePath(marker.target_root) !== operationScopePath(targetRoot)) {
+    if (marker.operation_id !== operationId || marker.operation_fingerprint !== fingerprint) {
       throw new Error(`Fork staging conflict for ${targetRoot}.`);
     }
     const parentEvents = await studio.ledger.readAll();
@@ -74,7 +93,15 @@ async function forkStudioUnlocked({ studio, targetRoot, label, operationId, cras
   } else {
     const parentVerification = await studio.ledger.verify();
     if (!parentVerification.valid) throw new Error(`Cannot fork an invalid ledger: ${parentVerification.error}. Restore an intact ledger backup before retrying.`);
-    await cp(studio.rootDir, stagingRoot, { recursive: true, errorOnExist: true });
+    const operationRoot = operationScopePath(path.join(studio.rootDir, '.operations'));
+    await cp(studio.rootDir, stagingRoot, {
+      recursive: true,
+      errorOnExist: true,
+      filter: (source) => {
+        const candidate = operationScopePath(source);
+        return candidate !== operationRoot && !candidate.startsWith(`${operationRoot}${path.sep}`);
+      }
+    });
     const copiedLedger = new AppendOnlyLedger(path.join(stagingRoot, 'ledger.jsonl'));
     const copiedVerification = await copiedLedger.verify();
     if (!copiedVerification.valid || copiedVerification.head !== parentVerification.head) {
@@ -84,7 +111,6 @@ async function forkStudioUnlocked({ studio, targetRoot, label, operationId, cras
     marker = {
       operation_id: operationId,
       operation_fingerprint: fingerprint,
-      target_root: operationScopePath(targetRoot),
       parent_ledger_head: parentVerification.head
     };
     await writeJsonAtomic(markerPath, marker);
