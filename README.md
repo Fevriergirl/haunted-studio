@@ -271,6 +271,10 @@ Fork an existing history for path-dependence research:
 node src/cli.js fork .haunted-studio-branch-a "different observations" --operation-id fork-request-001
 ```
 
+Fork publication uses an operation-specific staging directory and verifies the
+copied ledger head before the target path appears. Retry with the same operation
+ID after an interrupted fork; do not manually repurpose staging directories.
+
 Run the fork with `HAUNTED_STUDIO_HOME` pointing to that directory.
 
 ## Experiments

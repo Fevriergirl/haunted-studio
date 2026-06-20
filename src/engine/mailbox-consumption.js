@@ -1,9 +1,9 @@
-import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, operationScopePath, serializeOperation } from '../core/operations.js';
 import { maybeInjectCrash } from '../core/crash-injection.js';
 
 export async function recordMailboxConsumption(options) {
   const resolvedOperationId = operationIdentity(options.operationId, 'mailbox-consumption-operation');
-  return serializeOperation(`mailbox-consumption:${options.studio.rootDir}:${resolvedOperationId}`, () =>
+  return serializeOperation(`studio-write:${operationScopePath(options.studio.rootDir)}`, () =>
     recordMailboxConsumptionUnlocked({ ...options, operationId: resolvedOperationId }));
 }
 

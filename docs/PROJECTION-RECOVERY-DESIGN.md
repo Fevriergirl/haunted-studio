@@ -113,6 +113,9 @@ Externally retryable writes carry:
 
 This applies to creative-cycle requests, human-review recording, memory
 corrections, mailbox receipt and consumption, forks, and explicit abandonment.
+All state-changing studio operations are also serialized by a normalized studio
+path inside one process, so distinct operation IDs cannot compute from the same
+stale projection.
 When an operation identity already exists:
 
 - the same fingerprint and completed result returns that result without a new
@@ -137,6 +140,13 @@ original cycle ID, operation ID, intention commitment, and recorded outputs.
 Completion is never appended twice. If completion was appended but state saving
 failed, startup rebuilds state and a retry returns the recorded completed
 result.
+
+Forks copy into an operation-specific staging directory, verify that the copied
+ledger exactly matches the intended parent head, append fork provenance, rebuild
+the staged projection, and only then publish by renaming the staging directory.
+A retry recognizes only its own staging marker; an unrelated existing snapshot
+is never adopted as an interrupted fork. If the parent changes during copying,
+the unpublished staging copy is discarded and the caller must retry.
 
 ## Crash-boundary contract
 
@@ -174,7 +184,7 @@ pre-PR-1B state file has no head identity and therefore always takes the
 documented legacy rebuild path. Existing state is never trusted by cycle count
 alone.
 
-Append serialization remains limited to one Node.js process and one resolved
-path. Multi-process writers and symlink aliases remain unsupported. This PR
+Write serialization remains limited to one Node.js process and normalized
+resolved paths. Multi-process writers and symlink aliases remain unsupported. This PR
 does not add comprehensive JSON Schema tooling, cross-process locking, or any
 research-semantic change.

@@ -2,12 +2,12 @@ import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ensureDir } from '../core/fs.js';
 import { id } from '../core/ids.js';
-import { assertOperationCompatible, operationFingerprint, operationIdentity } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, operationScopePath } from '../core/operations.js';
 
 const receiveQueues = new Map();
 
 async function serializeReceive(filePath, operation) {
-  const key = path.resolve(filePath);
+  const key = operationScopePath(filePath);
   const previous = receiveQueues.get(key) ?? Promise.resolve();
   let release;
   const gate = new Promise((resolve) => { release = resolve; });

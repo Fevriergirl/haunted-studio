@@ -5,7 +5,7 @@ import { canonicalize } from './canonical-json.js';
 import { ensureDir, readJson, writeJsonAtomic } from './fs.js';
 import { id } from './ids.js';
 import { INITIAL_STATE, projectLedger } from './projection.js';
-import { serializeOperation } from './operations.js';
+import { operationScopePath, serializeOperation } from './operations.js';
 
 export const DEFAULT_STATE = INITIAL_STATE;
 
@@ -39,12 +39,14 @@ export class Studio {
 
   async verifiedEvents() {
     const verification = await this.ledger.verify();
-    if (!verification.valid) throw new Error(`Ledger integrity failure: ${verification.error}`);
+    if (!verification.valid) {
+      throw new Error(`Ledger integrity failure: ${verification.error}. Stop writes and restore an intact ledger backup or archive this studio for forensic recovery.`);
+    }
     return this.ledger.readAll();
   }
 
   async initialize() {
-    return serializeOperation(`studio-initialize:${this.rootDir}`, () => this.initializeUnlocked());
+    return serializeOperation(`studio-initialize:${operationScopePath(this.rootDir)}`, () => this.initializeUnlocked());
   }
 
   async initializeUnlocked() {
@@ -114,7 +116,7 @@ export class Studio {
   }
 
   async saveProjection(state, action = 'projected') {
-    return serializeOperation(`projection-write:${this.statePath}`, async () => {
+    return serializeOperation(`projection-write:${operationScopePath(this.statePath)}`, async () => {
       return this.saveProjectionUnlocked(state, action);
     });
   }
@@ -126,7 +128,7 @@ export class Studio {
   }
 
   async projectAndSave(action = 'live_projection') {
-    return serializeOperation(`projection-write:${this.statePath}`, async () => {
+    return serializeOperation(`projection-write:${operationScopePath(this.statePath)}`, async () => {
       const events = await this.verifiedEvents();
       const state = projectLedger(events);
       return this.saveProjectionUnlocked(state, action);

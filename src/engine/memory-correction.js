@@ -1,10 +1,10 @@
 import { readJson } from '../core/fs.js';
-import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, operationScopePath, serializeOperation } from '../core/operations.js';
 import { maybeInjectCrash } from '../core/crash-injection.js';
 
 export async function recordMemoryCorrection(options) {
   const resolvedOperationId = operationIdentity(options.operationId, 'correction-operation');
-  return serializeOperation(`memory-correction:${options.studio.rootDir}:${resolvedOperationId}`, () =>
+  return serializeOperation(`studio-write:${operationScopePath(options.studio.rootDir)}`, () =>
     recordMemoryCorrectionUnlocked({ ...options, operationId: resolvedOperationId }));
 }
 

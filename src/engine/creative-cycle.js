@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../core/canonical-json.js';
 import { id } from '../core/ids.js';
 import { InjectedCrashError, maybeInjectCrash } from '../core/crash-injection.js';
-import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, operationScopePath, serializeOperation } from '../core/operations.js';
 import { projectLedger } from '../core/projection.js';
 import { terminalEventForCycle } from '../core/event-contract.js';
 import { chooseObservation } from '../roles/attention.js';
@@ -65,7 +65,7 @@ function cycleResultFromEvents({ events, cycleId, operationId, state, verificati
 export async function runCreativeCycle(options) {
   const resolvedOperationId = operationIdentity(options.operationId, 'cycle-operation');
   return serializeOperation(
-    `creative-cycle:${options.studio.rootDir}:${resolvedOperationId}`,
+    `studio-write:${operationScopePath(options.studio.rootDir)}`,
     () => runCreativeCycleUnlocked({ ...options, operationId: resolvedOperationId })
   );
 }

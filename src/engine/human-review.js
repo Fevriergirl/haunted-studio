@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from '../core/fs.js';
 import { id } from '../core/ids.js';
-import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, operationScopePath, serializeOperation } from '../core/operations.js';
 import { maybeInjectCrash } from '../core/crash-injection.js';
 
 function requireText(value, field) {
@@ -39,7 +39,7 @@ function normalizedReview(input, cycleId) {
 
 export async function recordHumanReview(options) {
   const resolvedOperationId = operationIdentity(options.operationId, 'review-operation');
-  return serializeOperation(`human-review:${options.studio.rootDir}:${resolvedOperationId}`, () =>
+  return serializeOperation(`studio-write:${operationScopePath(options.studio.rootDir)}`, () =>
     recordHumanReviewUnlocked({ ...options, operationId: resolvedOperationId }));
 }
 

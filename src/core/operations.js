@@ -1,8 +1,14 @@
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { canonicalize } from './canonical-json.js';
 import { id } from './ids.js';
 
 const operationQueues = new Map();
+
+export function operationScopePath(value) {
+  const resolved = path.resolve(value);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
 
 export async function serializeOperation(key, operation) {
   const previous = operationQueues.get(key) ?? Promise.resolve();

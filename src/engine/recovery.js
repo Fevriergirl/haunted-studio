@@ -1,9 +1,9 @@
-import { assertOperationCompatible, operationFingerprint, operationIdentity, serializeOperation } from '../core/operations.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, operationScopePath, serializeOperation } from '../core/operations.js';
 import { maybeInjectCrash } from '../core/crash-injection.js';
 
 export async function abandonCycle(options) {
   const resolvedAbandonmentId = operationIdentity(options.abandonmentOperationId, 'abandon-operation');
-  return serializeOperation(`abandon:${options.studio.rootDir}:${resolvedAbandonmentId}`, () =>
+  return serializeOperation(`studio-write:${operationScopePath(options.studio.rootDir)}`, () =>
     abandonCycleUnlocked({ ...options, abandonmentOperationId: resolvedAbandonmentId }));
 }
 
