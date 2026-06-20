@@ -113,11 +113,18 @@ score-only promotion:
 - an **unresolved/undetectable** fidelity finding downgrades a passing score to
   `needs_fidelity_review` rather than silently passing.
 
-## Integration path (future slices)
+## Integration path (slices)
 
-1. Persist the five record kinds as versioned ledger events with their own
-   lifecycle transitions in `src/core/event-contract.js`, mirroring the
-   post-result-evidence validators.
+1. **Done (this branch).** Persist the five record kinds as post-cycle ledger
+   events (`fidelity_intention_frozen`, `fidelity_maker_reported`,
+   `fidelity_signals_detected`, `fidelity_violation_alleged`,
+   `fidelity_adjudicated`) over a completed cycle, with defense-in-depth
+   contract validation in `src/core/event-contract.js` and a record<->event
+   adapter in `src/engine/fidelity-ledger.js`. The ledger re-checks every
+   invariant: a completed cycle is required, the frozen intention must come
+   first, the commitment hash cannot be rewritten, a detection signal cannot
+   carry a verdict, an allegation must reference real signals, and a pixel-level
+   claim cannot be confirmed from artifact-description evidence.
 2. Run `detectSignals` from a dedicated, role-isolated detector provider, and
    `adjudicate` from an adversarial reviewer provider, both separate from the
    maker.

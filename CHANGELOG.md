@@ -13,6 +13,10 @@
   possible violation, adversarial challenge, and confirmed/rejected/unresolved/
   undetectable verdicts, with an inclusive canon-threshold correction. Not yet
   wired into the live cycle.
+- Persist fidelity adjudication as post-cycle ledger events with
+  defense-in-depth contract validation (commitment cannot be rewritten, the
+  detector cannot carry a verdict, allegations must reference real signals, and
+  a pixel-level claim cannot be confirmed from artifact-description evidence).
 
 ## 0.1.0 - 2026-06-20
 

@@ -9,8 +9,23 @@ export const CYCLE_TERMINAL_TYPES = new Set(['cycle_completed', 'cycle_failed'])
 export const POST_CYCLE_EVENT_TYPES = new Set([
   'human_review_recorded',
   'mailbox_observations_consumed',
-  'memory_corrected'
+  'memory_corrected',
+  'fidelity_intention_frozen',
+  'fidelity_maker_reported',
+  'fidelity_signals_detected',
+  'fidelity_violation_alleged',
+  'fidelity_adjudicated'
 ]);
+
+const FIDELITY_EVENT_TYPES = new Set([
+  'fidelity_intention_frozen',
+  'fidelity_maker_reported',
+  'fidelity_signals_detected',
+  'fidelity_violation_alleged',
+  'fidelity_adjudicated'
+]);
+
+const FIDELITY_VERDICTS = new Set(['confirmed', 'rejected', 'unresolved', 'undetectable']);
 
 const GLOBAL_EVENT_TYPES = new Set([
   'studio_initialized',
@@ -292,7 +307,8 @@ function validateEnvelope({ type, actor, cycleId, payload, schemaVersion }) {
 
   const requiresCycle = CYCLE_EVENT_TYPES.has(type) ||
     type === 'human_review_recorded' ||
-    type === 'mailbox_observations_consumed';
+    type === 'mailbox_observations_consumed' ||
+    FIDELITY_EVENT_TYPES.has(type);
   if (requiresCycle && !hasCycleIdentity(cycleId)) {
     throw new Error(`Ledger event ${type} requires a non-empty cycle identity.`);
   }
@@ -416,10 +432,74 @@ function validateCycleTransition({ type, cycleId, payload }, events, { allowLega
   validatePostResultEvidence(type, payload, cycleId, events);
 }
 
+// Defense in depth: the fidelity-adjudication module already enforces these
+// invariants at construction, but the ledger re-checks them so no malformed or
+// commitment-rewriting fidelity event can be persisted.
+function validateFidelityEvent({ type, cycleId, payload }, events) {
+  const cycleFidelity = events.filter((event) => event.cycle_id === cycleId && FIDELITY_EVENT_TYPES.has(event.type));
+  const frozen = cycleFidelity.find((event) => event.type === 'fidelity_intention_frozen')?.payload;
+
+  if (type === 'fidelity_intention_frozen') {
+    if (frozen) throw new Error(`Cycle ${cycleId} already has a frozen fidelity intention.`);
+    if (typeof payload.commitment_hash !== 'string' || !payload.commitment_hash.trim() || !isRecord(payload.fields)) {
+      throw new Error('fidelity_intention_frozen requires a commitment_hash and fields.');
+    }
+    return;
+  }
+
+  if (!frozen) throw new Error(`Cycle ${cycleId} requires fidelity_intention_frozen before ${type}.`);
+  if (payload.commitment_hash !== frozen.commitment_hash) {
+    throw new Error(`${type} references a different commitment than the frozen intention; the original commitment cannot be rewritten.`);
+  }
+
+  if (type === 'fidelity_maker_reported') {
+    if (typeof payload.honored !== 'boolean') throw new Error('fidelity_maker_reported requires an honored boolean.');
+    return;
+  }
+
+  if (type === 'fidelity_signals_detected') {
+    if (!Array.isArray(payload.signals)) throw new Error('fidelity_signals_detected requires a signals array.');
+    if (payload.signals.some((signal) => 'verdict' in signal)) {
+      throw new Error('A detection signal cannot carry a verdict; the detector does not adjudicate.');
+    }
+    return;
+  }
+
+  if (type === 'fidelity_violation_alleged') {
+    if (!Array.isArray(payload.possible_violations)) throw new Error('fidelity_violation_alleged requires possible_violations.');
+    const signalIds = new Set(cycleFidelity
+      .filter((event) => event.type === 'fidelity_signals_detected')
+      .flatMap((event) => event.payload.signals.map((signal) => signal.record_id)));
+    for (const violation of payload.possible_violations) {
+      if (violation.status !== 'alleged') throw new Error('A possible violation must be alleged, not pre-confirmed.');
+      if (!Array.isArray(violation.basis_signal_ids) || violation.basis_signal_ids.some((id) => !signalIds.has(id))) {
+        throw new Error('fidelity_violation_alleged references unknown detection signals.');
+      }
+    }
+    return;
+  }
+
+  // fidelity_adjudicated
+  if (!FIDELITY_VERDICTS.has(payload.verdict)) throw new Error('fidelity_adjudicated requires a valid verdict.');
+  const violations = new Map(cycleFidelity
+    .filter((event) => event.type === 'fidelity_violation_alleged')
+    .flatMap((event) => event.payload.possible_violations.map((violation) => [violation.record_id, violation])));
+  const source = violations.get(payload.possible_violation_id);
+  if (!source) throw new Error('fidelity_adjudicated references an unknown possible violation.');
+  if (payload.verdict === 'confirmed') {
+    const challenges = Array.isArray(payload.challenges) ? payload.challenges.filter((value) => typeof value === 'string' && value.trim()) : [];
+    if (challenges.length === 0) throw new Error('A confirmed verdict requires at least one adversarial challenge.');
+    if (source.pixel_level && source.evidence_basis !== 'pixel_inspection') {
+      throw new Error('A pixel-level violation cannot be confirmed from artifact-description evidence.');
+    }
+  }
+}
+
 export function validateEventBeforeAppend(event, existingEvents, options = {}) {
   validateEnvelope(event);
   if (POST_CYCLE_EVENT_TYPES.has(event.type)) {
     validatePostCycleTransition(event, existingEvents);
+    if (FIDELITY_EVENT_TYPES.has(event.type)) validateFidelityEvent(event, existingEvents);
     return;
   }
   if (CYCLE_EVENT_TYPES.has(event.type)) {
