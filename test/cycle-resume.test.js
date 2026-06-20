@@ -36,6 +36,13 @@ class ArtifactProvider extends DeterministicProvider {
   }
 }
 
+class ResumeContextProvider extends DeterministicProvider {
+  async formNecessity(context) {
+    const result = await super.formNecessity(context);
+    return { ...result, statement: `${result.statement} incomplete=${context.state.incomplete_cycles?.length ?? 0}` };
+  }
+}
+
 async function scenarioFor(boundary) {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), `haunted-crash-${boundary}-`));
   const experiment = structuredClone(baseExperiment);
@@ -118,6 +125,36 @@ test('completed cycle retry is a no-op and conflicting payload is rejected', asy
   );
 });
 
+test('cycle identity cannot be adopted by a different operation', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-cycle-ownership-'));
+  const studio = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  await runCreativeCycle({
+    studio, provider: new DeterministicProvider(), observations,
+    operationId: 'operation_owner_a', cycleIdOverride: 'cycle_owned'
+  });
+  await assert.rejects(
+    runCreativeCycle({
+      studio, provider: new DeterministicProvider(), observations,
+      operationId: 'operation_owner_b', cycleIdOverride: 'cycle_owned'
+    }),
+    /cycle identity conflict/i
+  );
+});
+
+test('concurrent identical cycle requests return one logical result', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-cycle-concurrent-retry-'));
+  const studio = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  const request = {
+    studio, provider: new DeterministicProvider(), observations,
+    operationId: 'operation_concurrent_cycle', cycleIdOverride: 'cycle_concurrent_retry'
+  };
+  const [first, repeated] = await Promise.all([runCreativeCycle(request), runCreativeCycle(request)]);
+  assert.equal(repeated.cycleId, first.cycleId);
+  const events = await studio.ledger.readAll();
+  assert.equal(events.filter((event) => event.type === 'cycle_started').length, 1);
+  assert.equal(events.filter((event) => event.type === 'cycle_completed').length, 1);
+});
+
 test('incomplete cycle requires explicit resume and preserves its intention commitment', async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-explicit-resume-'));
   const operationId = 'operation_explicit_resume';
@@ -152,4 +189,48 @@ test('explicit abandonment terminates an incomplete operation idempotently', asy
   assert.equal(repeated.event_id, first.event_id);
   assert.equal((await studio.ledger.readAll()).length, count);
   assert.equal((await studio.getState()).incomplete_cycles.length, 0);
+});
+
+test('resume uses the original pre-cycle projection and rejects changed constitution', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-resume-context-'));
+  const operationId = 'operation_resume_context';
+  const studio = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  await assert.rejects(
+    runCreativeCycle({ studio, provider: new ResumeContextProvider(), observations, operationId, crashAfter: 'cycle_started' }),
+    /injected crash/i
+  );
+  const restarted = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  const resumed = await runCreativeCycle({
+    studio: restarted, provider: new ResumeContextProvider(), observations, operationId, resume: true
+  });
+  assert.match(resumed.necessity.statement, /incomplete=0$/);
+
+  const secondRoot = await mkdtemp(path.join(os.tmpdir(), 'haunted-resume-constitution-'));
+  const second = new Studio({ rootDir: secondRoot, constitution, experiment: baseExperiment });
+  await assert.rejects(
+    runCreativeCycle({ second, studio: second, provider: new DeterministicProvider(), observations, operationId: 'operation_constitution', crashAfter: 'cycle_started' }),
+    /injected crash/i
+  );
+  second.constitution = { ...constitution, version: 'changed-version' };
+  await assert.rejects(
+    runCreativeCycle({ studio: second, provider: new DeterministicProvider(), observations, operationId: 'operation_constitution', resume: true }),
+    /operation conflict/i
+  );
+});
+
+test('legacy incomplete cycle can be explicitly abandoned by cycle identity', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-legacy-incomplete-'));
+  const studio = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  await studio.initialize();
+  const cycleId = 'cycle_legacy_incomplete';
+  await studio.ledger.append({ type: 'cycle_started', actor: 'legacy', cycleId, payload: {} });
+  const restarted = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  await restarted.initialize();
+  const event = await abandonCycle({
+    studio: restarted,
+    cycleId,
+    abandonmentOperationId: 'operation_abandon_legacy'
+  });
+  assert.equal(event.type, 'cycle_failed');
+  assert.equal(event.cycle_id, cycleId);
 });

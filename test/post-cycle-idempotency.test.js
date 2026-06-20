@@ -54,6 +54,21 @@ test('human-review append crash recovers and retry does not duplicate review evi
   );
 });
 
+test('concurrent identical human reviews return the one recorded review', async () => {
+  const { rootDir, studio, cycle } = await completedStudio('haunted-review-concurrent-');
+  const reviewFile = path.join(rootDir, 'review-concurrent.json');
+  await writeFile(reviewFile, JSON.stringify({
+    consent: true,
+    reviewer_id: 'concurrent-reviewer',
+    answers: { first_notice: 'One.', newly_visible: 'Two.', too_explained: 'Three.', lingering_effect: 'Four.' },
+    ratings: { necessity: 4, depth: 4, decorative_risk: 2, return_desire: 4 }
+  }));
+  const request = { studio, cycleId: cycle.cycleId, reviewFile, operationId: 'operation_review_concurrent' };
+  const [first, repeated] = await Promise.all([recordHumanReview(request), recordHumanReview(request)]);
+  assert.equal(repeated.review.review_id, first.review.review_id);
+  assert.equal((await studio.ledger.readAll()).filter((event) => event.type === 'human_review_recorded').length, 1);
+});
+
 test('memory-correction append crash recovers and retry is idempotent', async () => {
   const { rootDir, studio } = await completedStudio('haunted-correction-retry-');
   const target = (await studio.ledger.readAll()).find((event) => event.type === 'memory_consolidated');
