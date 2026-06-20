@@ -125,17 +125,17 @@ retains `intentionHash`.
 
 If projected-state saving or final verification throws after
 `cycle_completed` was appended, the engine rethrows the error but does not add
-`cycle_failed`. The ledger therefore retains one terminal outcome. Detecting
-and recovering a stale projection is intentionally deferred to the separate
-projection-recovery work; this lifecycle contract does not silently rebuild or
-rewrite state.
+`cycle_failed`. The ledger therefore retains one terminal outcome. On restart,
+the projection policy verifies the ledger and rebuilds the stale state without
+rewriting history. See [Projection recovery and
+idempotency](PROJECTION-RECOVERY-DESIGN.md).
 
 ## Deliberately deferred work
 
-This contract does not implement:
+The projection-recovery layer now implements ledger-head identity, startup
+freshness checks, deterministic rebuild, explicit resume, and operation
+idempotency. This contract still does not implement:
 
-- projected ledger-head identity or startup freshness checks;
-- state rebuild policy, crash recovery, resume, or operation idempotency;
 - comprehensive JSON Schema validation of role responses or event payloads;
 - changes to surprise, motif, memory, canon, audience, critic, scoring, or
   ablation semantics.

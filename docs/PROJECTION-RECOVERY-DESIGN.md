@@ -109,8 +109,8 @@ Externally retryable writes carry:
 - an `operation_fingerprint`, computed from canonical request content.
 
 This applies to creative-cycle requests, human-review recording, memory
-corrections, mailbox-consumption recording, and explicit abandonment. When an
-operation identity already exists:
+corrections, mailbox receipt and consumption, forks, and explicit abandonment.
+When an operation identity already exists:
 
 - the same fingerprint and completed result returns that result without a new
   event;

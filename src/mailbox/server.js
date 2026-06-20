@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { assertOperationCompatible } from '../core/operations.js';
 
 const MAX_BODY_BYTES = 1_000_000;
 
@@ -43,7 +44,22 @@ export function startMailboxServer({ mailbox, ledger, port = 19820, host = '127.
         const body = await readBody(request);
         if (!body.type) return sendJson(response, 400, { error: 'type is required' });
         const message = await mailbox.receive(body);
-        await ledger.append({ type: 'mailbox_message_received', actor: 'mailbox-server', payload: { message_id: message.message_id, message_type: message.type, sender: message.sender } });
+        const events = await ledger.readAll();
+        const prior = assertOperationCompatible(events, message.operation_id, message.operation_fingerprint)
+          .find((event) => event.type === 'mailbox_message_received');
+        if (!prior) {
+          await ledger.append({
+            type: 'mailbox_message_received',
+            actor: 'mailbox-server',
+            payload: {
+              message_id: message.message_id,
+              message_type: message.type,
+              sender: message.sender,
+              operation_id: message.operation_id,
+              operation_fingerprint: message.operation_fingerprint
+            }
+          });
+        }
         return sendJson(response, 202, { message_id: message.message_id, status: 'received' });
       }
       if (request.method === 'POST' && request.url === '/mailbox/poll') {
@@ -57,7 +73,13 @@ export function startMailboxServer({ mailbox, ledger, port = 19820, host = '127.
       }
       return sendJson(response, 404, { error: 'not found' });
     } catch (error) {
-      const status = error.statusCode ?? (error.message.startsWith('Mailbox ') || error.message.startsWith('message_ids') ? 400 : 500);
+      const status = error.statusCode ?? (
+        error.message.startsWith('Mailbox ') ||
+        error.message.startsWith('message_ids') ||
+        error.message.startsWith('Operation conflict')
+          ? 400
+          : 500
+      );
       return sendJson(response, status, { error: error.message });
     }
   });
