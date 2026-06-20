@@ -17,6 +17,8 @@ test('fork provenance preserves the ledger without storing an absolute parent pa
   const targetRoot = path.join(parent, 'forked-studio');
   const studio = new Studio({ rootDir, constitution, experiment });
   await studio.initialize();
+  const parentLedgerBefore = await readFile(path.join(rootDir, 'ledger.jsonl'), 'utf8');
+  const parentStateBefore = await readFile(path.join(rootDir, 'state.json'), 'utf8');
 
   const result = await forkStudio({ studio, targetRoot, label: 'test fork' });
   assert.equal(result.verification.valid, true);
@@ -27,4 +29,6 @@ test('fork provenance preserves the ledger without storing an absolute parent pa
   const event = forkEvents.at(-1);
   assert.equal(event.payload.parent_studio, 'source-studio');
   assert.equal('parent_root' in event.payload, false);
+  assert.equal(await readFile(path.join(rootDir, 'ledger.jsonl'), 'utf8'), parentLedgerBefore);
+  assert.equal(await readFile(path.join(rootDir, 'state.json'), 'utf8'), parentStateBefore);
 });
