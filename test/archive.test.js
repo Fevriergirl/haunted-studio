@@ -16,7 +16,7 @@ test('archiving a studio preserves its append-only ledger before reset', async (
   const studio = new Studio({ rootDir, constitution, experiment });
   await studio.initialize();
   await studio.ledger.append({
-    type: 'test_provenance',
+    type: 'mailbox_message_received',
     actor: 'test',
     payload: { preserved: true }
   });
