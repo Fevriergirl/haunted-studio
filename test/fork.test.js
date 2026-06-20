@@ -103,3 +103,16 @@ test('fork refuses to commandeer an unrelated existing parent-prefix snapshot', 
   );
   assert.equal(await readFile(path.join(targetRoot, 'ledger.jsonl'), 'utf8'), before);
 });
+
+test('fork operation identity conflicts when reused for a different target or label', async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), 'haunted-fork-operation-conflict-'));
+  const rootDir = path.join(parent, 'source-studio');
+  const studio = new Studio({ rootDir, constitution, experiment });
+  await studio.initialize();
+  const operationId = 'operation_fork_source_claim';
+  await forkStudio({ studio, targetRoot: path.join(parent, 'fork-a'), label: 'first', operationId });
+  await assert.rejects(
+    forkStudio({ studio, targetRoot: path.join(parent, 'fork-b'), label: 'second', operationId }),
+    /operation conflict/i
+  );
+});
