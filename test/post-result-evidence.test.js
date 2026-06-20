@@ -134,12 +134,24 @@ async function artifactCycle(scenario, options = {}) {
 test('legacy proposed_accident is normalized as planned ambiguity, never discovered surprise', () => {
   const normalized = normalizeCandidatePlan(
     { proposed_accident: 'A doubled edge.' },
-    { lockedIntention: { anticipated_risk: 'The image may become decorative.' }, lockEventId: 'evt_lock' }
+    {
+      lockedIntention: { anticipated_risk: 'The image may become decorative.' },
+      lockEventId: 'evt_lock', candidateSourceEventId: 'evt_candidates', candidateId: 'candidate_a'
+    }
   );
   assert.deepEqual(normalized.planned_ambiguities, ['A doubled edge.']);
   assert.equal(normalized.productive_surprise, undefined);
   assert.equal(normalized.legacy_source_field, 'proposed_accident');
   assert.ok(normalized.plan_items.some((item) => item.classification === 'anticipated_risk' && item.source_event_id === 'evt_lock'));
+  assert.ok(normalized.plan_items.some((item) => item.classification === 'planned_ambiguity' && item.source_event_id === 'evt_candidates' && item.source_candidate_id === 'candidate_a'));
+  const otherCandidate = normalizeCandidatePlan(
+    { proposed_accident: 'A doubled edge.' },
+    { candidateSourceEventId: 'evt_candidates', candidateId: 'candidate_b' }
+  );
+  assert.notEqual(
+    normalized.plan_items.find((item) => item.classification === 'planned_ambiguity').plan_item_id,
+    otherCandidate.plan_items.find((item) => item.classification === 'planned_ambiguity').plan_item_id
+  );
 });
 
 test('witness blind pass excludes intention, plan, criticism, curation, audience, and memory', async () => {
@@ -394,6 +406,12 @@ test('ledger rejects mismatched evidence identity, broken links, and unsupported
     type: 'artifact_witnessed', actor: 'test', cycleId,
     payload: { artifact_id: 'artifact_b', artifact_hash: 'b'.repeat(64), observations: [base] }
   }), /artifact identity|artifact hash/i);
+  const unsupportedWitness = { ...base };
+  delete unsupportedWitness.observable_support;
+  await assert.rejects(ledger.append({
+    type: 'artifact_witnessed', actor: 'test', cycleId,
+    payload: { artifact_id: 'artifact_a', artifact_hash: 'a'.repeat(64), observations: [unsupportedWitness] }
+  }), /observable support/i);
   await ledger.append({
     type: 'artifact_witnessed', actor: 'test', cycleId,
     payload: { artifact_id: 'artifact_a', artifact_hash: 'a'.repeat(64), observations: [base] }
