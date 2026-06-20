@@ -99,3 +99,15 @@ test('mailbox consumption is idempotent and conflicting message sets are rejecte
   assert.equal((await studio.ledger.readAll()).filter((event) => event.type === 'mailbox_observations_consumed').length, 1);
   await assert.rejects(recordMailboxConsumption({ ...input, messageIds: ['message-3'] }), /operation conflict/i);
 });
+
+test('mailbox-consumption append crash retries without duplicate records', async () => {
+  const { studio, cycle } = await completedStudio('haunted-mailbox-consumption-crash-');
+  const request = {
+    studio, cycleId: cycle.cycleId, messageIds: ['message_b', 'message_a'],
+    operationId: 'operation_mailbox_consumption_crash'
+  };
+  await assert.rejects(recordMailboxConsumption({ ...request, crashAfter: 'mailbox_observations_consumed' }), /injected crash/i);
+  const event = await recordMailboxConsumption({ ...request, messageIds: ['message_a', 'message_b'] });
+  assert.deepEqual(event.payload.message_ids, ['message_a', 'message_b']);
+  assert.equal((await studio.ledger.readAll()).filter((item) => item.type === 'mailbox_observations_consumed').length, 1);
+});

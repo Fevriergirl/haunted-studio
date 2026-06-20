@@ -15,10 +15,12 @@ const baseExperiment = await readJson(path.join(cwd, 'config', 'experiment.json'
 const observations = await readJson(path.join(cwd, 'observations', 'seed-observations.json'));
 
 class ArtifactProvider extends DeterministicProvider {
-  constructor() {
+  constructor({ score = 0.9, action = 'accept_artifact' } = {}) {
     super();
     this.generateCount = 0;
     this.auditCount = 0;
+    this.score = score;
+    this.action = action;
   }
 
   async generateArtifact({ outputPath }) {
@@ -30,8 +32,18 @@ class ArtifactProvider extends DeterministicProvider {
   async inspectArtifact({ candidate }) {
     this.auditCount += 1;
     return {
-      status: 'generated', candidate_id: candidate.id, overall_score: 0.9,
-      recommended_action: 'accept_artifact', scores: {}, observations: [], failures: [], strongest_accident: null
+      status: 'generated', candidate_id: candidate.id, overall_score: this.score,
+      recommended_action: this.action, scores: {}, observations: [], failures: [], strongest_accident: null
+    };
+  }
+}
+
+class RejectingCuratorProvider extends DeterministicProvider {
+  async curate({ candidates }) {
+    return {
+      decision: 'reject_all', selected_candidate_id: null, score: 0, threshold: 1,
+      revision_threshold: 1, rationale: 'Fixture rejection.', conditions: [],
+      ranking: candidates.map((candidate) => ({ candidate_id: candidate.id, score: 0, penalty: 0 }))
     };
   }
 }
@@ -48,21 +60,29 @@ async function scenarioFor(boundary) {
   const experiment = structuredClone(baseExperiment);
   let provider = new DeterministicProvider();
   let generateImage = false;
-  if (boundary === 'candidate_revised') {
+  let features = {};
+  if (['candidate_revised', 'revision_critiqued', 'final_curation_decided'].includes(boundary)) {
     experiment.canon_threshold = 0.99;
     experiment.revision_threshold = 0.1;
   }
-  if (['artifact_generated', 'artifact_audited'].includes(boundary)) {
+  if (boundary === 'curation_overridden_by_condition') {
+    provider = new RejectingCuratorProvider();
+    features = { refusal: false };
+  }
+  if (['artifact_generated', 'artifact_audited', 'artifact_audit_not_passed'].includes(boundary)) {
     provider = new ArtifactProvider();
+    if (boundary === 'artifact_audit_not_passed') provider = new ArtifactProvider({ score: 0.2, action: 'reject_artifact' });
     generateImage = true;
   }
-  return { rootDir, experiment, provider, generateImage, studio: new Studio({ rootDir, constitution, experiment }) };
+  return { rootDir, experiment, provider, generateImage, features, studio: new Studio({ rootDir, constitution, experiment }) };
 }
 
 const cycleBoundaries = [
   'cycle_started', 'observation_selected', 'intention_locked', 'candidates_generated',
-  'critics_reported', 'curation_decided', 'candidate_revised', 'artifact_generated',
-  'artifact_audited', 'audience_predicted', 'memory_consolidated', 'cycle_completed', 'state_saved'
+  'critics_reported', 'curation_decided', 'curation_overridden_by_condition',
+  'candidate_revised', 'revision_critiqued', 'final_curation_decided', 'artifact_generated',
+  'artifact_audited', 'artifact_audit_not_passed', 'audience_predicted',
+  'memory_consolidated', 'cycle_completed', 'state_saved'
 ];
 
 test('each cycle persistence boundary supports restart without duplicate effects', async (t) => {
@@ -76,6 +96,7 @@ test('each cycle persistence boundary supports restart without duplicate effects
           provider: scenario.provider,
           observations,
           generateImage: scenario.generateImage,
+          features: scenario.features,
           operationId,
           crashAfter: boundary
         }),
@@ -90,6 +111,7 @@ test('each cycle persistence boundary supports restart without duplicate effects
         provider: scenario.provider,
         observations,
         generateImage: scenario.generateImage,
+        features: scenario.features,
         operationId,
         resume: !completed
       });
@@ -233,4 +255,21 @@ test('legacy incomplete cycle can be explicitly abandoned by cycle identity', as
   });
   assert.equal(event.type, 'cycle_failed');
   assert.equal(event.cycle_id, cycleId);
+});
+
+test('abandonment append crash is recovered idempotently', async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-abandon-crash-'));
+  const studio = new Studio({ rootDir, constitution, experiment: baseExperiment });
+  const operationId = 'operation_abandon_crash_cycle';
+  await assert.rejects(
+    runCreativeCycle({ studio, provider: new DeterministicProvider(), observations, operationId, crashAfter: 'cycle_started' }),
+    /injected crash/i
+  );
+  await assert.rejects(
+    abandonCycle({ studio, operationId, abandonmentOperationId: 'operation_abandon_crash', crashAfter: 'cycle_failed' }),
+    /injected crash/i
+  );
+  const event = await abandonCycle({ studio, operationId, abandonmentOperationId: 'operation_abandon_crash' });
+  assert.equal(event.type, 'cycle_failed');
+  assert.equal((await studio.ledger.readAll()).filter((item) => item.type === 'cycle_failed').length, 1);
 });
