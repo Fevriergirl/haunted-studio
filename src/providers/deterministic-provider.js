@@ -24,6 +24,10 @@ function motifPressure(observation, state) {
 }
 
 export class DeterministicProvider {
+  get supportsPostResultEvidence() {
+    return true;
+  }
+
   get name() {
     return 'deterministic';
   }
@@ -125,7 +129,7 @@ export class DeterministicProvider {
           delayed_discovery: strategy.accident,
           visual_silence: 'At least one quarter of the frame carries no symbolic explanation.'
         },
-        proposed_accident: strategy.accident,
+        planned_ambiguity: strategy.accident,
         medium: index === 1 ? 'staged photograph of an impossible room' : index === 2 ? 'large-format constructed photograph' : 'photoreal staged interior image',
         generation_prompt: `Create a materially convincing ${index === 1 ? 'staged photograph' : 'photoreal image'} based on this brief: ${strategy.structure} ${observation.text} Avoid ${intention.must_avoid.join(', ')}. Do not add text. Treat the impossible element as an ordinary physical fact.`,
         seed_signature: stableNumber(`${cycleId}:${index}:${observation.id}`)
@@ -141,7 +145,9 @@ export class DeterministicProvider {
       truth: roundScore(0.5 + stableNumber(`${candidate.id}:truth`) * 0.4),
       historical: roundScore(clamp(0.72 - historicalRepeat * 0.07 + stableNumber(`${candidate.id}:history`) * 0.2)),
       adversarial_survival: roundScore(0.45 + stableNumber(`${candidate.id}:adversary`) * 0.45),
-      productive_surprise: roundScore(0.48 + stableNumber(candidate.proposed_accident) * 0.44)
+      // This is a pre-result forecast used by the existing scoring model, not
+      // evidence that productive surprise occurred.
+      productive_surprise: roundScore(0.48 + stableNumber(candidate.planned_ambiguity ?? candidate.id) * 0.44)
     };
 
     const shortcutFindings = constitution.forbidden_shortcuts
@@ -223,7 +229,7 @@ export class DeterministicProvider {
       threshold: experiment.canon_threshold,
       revision_threshold: experiment.revision_threshold,
       rationale: accepted
-        ? `The selected candidate survives the independent critics with a score of ${winner.score} and its proposed accident can redirect later work.`
+        ? `The selected candidate survives the independent critics with a score of ${winner.score}; its planned ambiguity remains a hypothesis until post-result review.`
         : revisable
           ? `The strongest candidate scores ${winner.score}. It is not ready for canon, but the critics identify a specific repair rather than a failed premise.`
           : `No candidate met the ${experiment.canon_threshold} canon threshold or the conditions for a disciplined revision.`,
@@ -248,6 +254,36 @@ export class DeterministicProvider {
         'What remained with you after the image was gone?'
       ]
     };
+  }
+
+  async witnessArtifact({ artifact_id: artifactId, artifact_hash: artifactHash }) {
+    return {
+      observations: [{
+        description: `The deterministic offline witness received artifact ${artifactId} with recorded content hash ${artifactHash}. It makes no unverified visual claim.`,
+        observable_support: `artifact_hash:${artifactHash}`,
+        confidence: 1
+      }]
+    };
+  }
+
+  async compareArtifactDeviation({ witness }) {
+    return {
+      comparisons: witness.observations.map((observation) => ({
+        witness_evidence_id: observation.evidence_id,
+        classification: 'expected_realization',
+        description: 'The offline deterministic witness supplies no observable basis for an unplanned deviation.',
+        confidence: 1,
+        explicitly_planned: false,
+        observable_support: true,
+        coherent: true,
+        material_interpretive_change: false,
+        relates_to_work: false
+      }))
+    };
+  }
+
+  async reviewSurprise() {
+    return { reviews: [], no_productive_surprise: true };
   }
 
   async inspectArtifact({ candidate }) {
@@ -278,15 +314,9 @@ export class DeterministicProvider {
       : `When does formal control around ${observation.tags[0]} become evidence of pressure rather than mastery?`;
     if (!unresolved.includes(tension)) unresolved.push(tension);
 
+    // PR 2A deliberately does not promote a planned candidate field into
+    // autobiographical surprise. Typed evidence-driven memory is PR 2B.
     const activeSurprises = [...(state.active_surprises ?? [])];
-    if (selection?.proposed_accident && curation.decision === 'accept') {
-      activeSurprises.push({
-        source_candidate_id: selection.id,
-        description: selection.proposed_accident,
-        status: 'preserved',
-        introduced_cycle: selection.id.split('_').slice(1, -1).join('_') || null
-      });
-    }
 
     return {
       motifs,

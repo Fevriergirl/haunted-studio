@@ -41,9 +41,13 @@ test whether later differences are interpretable and traceable.
 
 ### Productive surprise
 
-A surprise counts only if it was absent from the locked intention, appears in an
-artifact or artifact description, is judged coherent, is explicitly preserved,
-and changes a later decision.
+A surprise is provisionally eligible only after a blind artifact observation
+supports an unplanned deviation. It must be coherent rather than technical
+failure or random noise, materially deepen interpretation, relate to the work,
+carry typed provenance and confidence, and survive adversarial review. Planned
+ambiguity and realized intended variation never count as surprise. No surprise
+found is a valid outcome. PR 2B will separately require evidence that a
+confirmed surprise altered a later decision.
 
 ### Audience calibration
 

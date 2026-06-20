@@ -26,6 +26,10 @@ const CYCLE_EVENT_TYPES = new Set([
   'candidate_revised',
   'revision_critiqued',
   'artifact_generated',
+  'artifact_witnessed',
+  'artifact_deviations_compared',
+  'surprise_reviewed',
+  'post_result_evidence_unavailable',
   'artifact_audited',
   'artifact_audit_not_passed',
   'audience_predicted',
@@ -47,12 +51,15 @@ const ALLOWED_NEXT_CYCLE_EVENTS = new Map([
   ['critics_reported', new Set(['curation_decided'])],
   ['curation_overridden_by_condition', new Set([
     'artifact_generated',
-    'audience_predicted',
-    'memory_consolidated'
+    'post_result_evidence_unavailable'
   ])],
   ['candidate_revised', new Set(['revision_critiqued'])],
   ['revision_critiqued', new Set(['curation_decided'])],
-  ['artifact_generated', new Set(['artifact_audited'])],
+  ['artifact_generated', new Set(['artifact_witnessed'])],
+  ['artifact_witnessed', new Set(['artifact_deviations_compared'])],
+  ['artifact_deviations_compared', new Set(['surprise_reviewed'])],
+  ['surprise_reviewed', new Set(['artifact_audited'])],
+  ['post_result_evidence_unavailable', new Set(['audience_predicted', 'memory_consolidated'])],
   ['artifact_audited', new Set(['artifact_audit_not_passed', 'audience_predicted', 'memory_consolidated'])],
   ['artifact_audit_not_passed', new Set(['audience_predicted', 'memory_consolidated'])],
   ['audience_predicted', new Set(['memory_consolidated'])],
@@ -128,7 +135,7 @@ function validatePostCycleTransition({ type, cycleId }, events) {
   }
 }
 
-function validateCycleTransition({ type, cycleId, payload }, events) {
+function validateCycleTransition({ type, cycleId, payload }, events, { allowLegacyLifecycle = false } = {}) {
   const cycleEvents = events.filter((event) =>
     event.cycle_id === cycleId && CYCLE_EVENT_TYPES.has(event.type)
   );
@@ -187,7 +194,8 @@ function validateCycleTransition({ type, cycleId, payload }, events) {
   let allowed = ALLOWED_NEXT_CYCLE_EVENTS.get(last.type);
   if (last.type === 'curation_decided') {
     if (last.payload?.decision === 'accept') {
-      allowed = new Set(['artifact_generated', 'audience_predicted', 'memory_consolidated']);
+      allowed = new Set(['artifact_generated', 'post_result_evidence_unavailable']);
+      if (allowLegacyLifecycle) allowed = new Set([...allowed, 'audience_predicted', 'memory_consolidated']);
     } else if (last.payload?.decision === 'revise') {
       allowed = new Set(['curation_overridden_by_condition', 'candidate_revised']);
     } else if (last.payload?.decision === 'reject_all') {
@@ -196,20 +204,45 @@ function validateCycleTransition({ type, cycleId, payload }, events) {
       throw new Error(`Cycle ${cycleId} has invalid prior curation decision ${last.payload?.decision}.`);
     }
   }
+  if (allowLegacyLifecycle && last.type === 'curation_overridden_by_condition') {
+    allowed = new Set([...allowed, 'audience_predicted', 'memory_consolidated']);
+  }
+  if (allowLegacyLifecycle && last.type === 'artifact_generated') {
+    allowed = new Set([...allowed, 'artifact_audited']);
+  }
   if (!allowed?.has(type)) {
     const detail = last.type === 'curation_decided' ? ` (${last.payload?.decision})` : '';
     throw new Error(`Invalid lifecycle transition for ${cycleId}: ${last.type}${detail} -> ${type}.`);
   }
+
+  if (type === 'artifact_witnessed') {
+    if (typeof payload.artifact_id !== 'string' || typeof payload.artifact_hash !== 'string' || !Array.isArray(payload.observations)) {
+      throw new Error('artifact_witnessed requires artifact identity, hash, and observations.');
+    }
+  }
+  if (type === 'artifact_deviations_compared') {
+    if (typeof payload.artifact_id !== 'string' || !Array.isArray(payload.witness_evidence_ids) || !Array.isArray(payload.comparisons)) {
+      throw new Error('artifact_deviations_compared requires artifact identity and linked comparison evidence.');
+    }
+  }
+  if (type === 'surprise_reviewed') {
+    if (typeof payload.artifact_id !== 'string' || !Array.isArray(payload.reviewed_evidence)) {
+      throw new Error('surprise_reviewed requires artifact identity and reviewed evidence.');
+    }
+    if (payload.reviewed_evidence.some((item) => item.classification === 'productive_surprise' && item.review_status !== 'confirmed')) {
+      throw new Error('productive_surprise requires confirmed adversarial review.');
+    }
+  }
 }
 
-export function validateEventBeforeAppend(event, existingEvents) {
+export function validateEventBeforeAppend(event, existingEvents, options = {}) {
   validateEnvelope(event);
   if (POST_CYCLE_EVENT_TYPES.has(event.type)) {
     validatePostCycleTransition(event, existingEvents);
     return;
   }
   if (CYCLE_EVENT_TYPES.has(event.type)) {
-    validateCycleTransition(event, existingEvents);
+    validateCycleTransition(event, existingEvents, options);
     return;
   }
   if (event.type === 'studio_initialized' && existingEvents.some((item) => item.type === 'studio_initialized')) {
@@ -226,5 +259,5 @@ export function validateStoredVersionedEvent(event, priorEvents) {
     cycleId: adapted.cycle_id,
     payload: adapted.payload,
     schemaVersion: adapted.schema_version
-  }, priorEvents);
+  }, priorEvents, { allowLegacyLifecycle: true });
 }

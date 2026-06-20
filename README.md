@@ -50,6 +50,8 @@ validation did not make paid API calls or generate a live image.
   consolidation into role modules within one process;
 - permits one revision or a refusal of all candidates;
 - optionally generates an image and audits the image that actually exists;
+- records a blind post-result witness description, deviation comparison, and
+  adversarial surprise review before artifact audit;
 - keeps concept acceptance separate from passage of the artifact audit;
 - records simulated audience predictions separately from consented human
   reviews;
@@ -89,7 +91,11 @@ observation stream / local mailbox
                 |
    curator: accept / revise / refuse
                 |
-   optional image generation + audit
+ optional image generation
+                |
+ blind witness -> deviation comparison -> adversarial surprise review
+                |
+          artifact audit
                 |
  simulated audience prediction -> consented human review
                 |
@@ -100,6 +106,8 @@ observation stream / local mailbox
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and trust
 boundaries.
+See [post-result evidence design](docs/POST-RESULT-EVIDENCE-DESIGN.md) for the
+evidence vocabulary, blindness contract, and compatibility behavior.
 
 ## Creative cycle
 
@@ -109,10 +117,14 @@ boundaries.
 4. Generate distinct candidate concepts.
 5. Critique each candidate against the intention, constitution, and history.
 6. Accept, revise once, or refuse all candidates.
-7. Optionally generate and audit an image.
-8. Predict a possible audience encounter.
-9. Record consented human responses separately when available.
-10. Consolidate memory without rewriting the ledger.
+7. Optionally generate an image and record its content hash.
+8. Blindly witness the result, compare deviations to the plan, and challenge
+   any provisional surprise.
+9. Audit the artifact, or explicitly record that post-result evidence is
+   unavailable for a conceptual-only cycle.
+10. Predict a possible audience encounter.
+11. Record consented human responses separately when available.
+12. Consolidate memory without rewriting the ledger.
 
 Concept acceptance produces `conceptual_only`. An image becomes
 `artifact_audit_passed` only when an audit of the generated file recommends
@@ -172,6 +184,12 @@ Add `--image` to request image generation:
 ```bash
 node src/cli.js run --image
 ```
+
+PR 2A intentionally adds no live witness/comparator/reviewer API calls. A live
+image cycle therefore requires separately configured post-result role providers
+through the programmatic cycle interface. The CLI fails before creating studio
+state rather than treating the artist's plan or artifact audit as blind witness
+evidence.
 
 Model names are configurable because account access and availability change.
 Missing `OPENAI_API_KEY` fails before a studio cycle is written.

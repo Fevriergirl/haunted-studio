@@ -32,6 +32,22 @@ export class OpenAIProvider {
     return 'openai';
   }
 
+  get supportsPostResultEvidence() {
+    return false;
+  }
+
+  async witnessArtifact() {
+    throw new Error('OpenAI post-result witness calls are not enabled in PR 2A; configure a separate artifact witness provider.');
+  }
+
+  async compareArtifactDeviation() {
+    throw new Error('OpenAI deviation-comparator calls are not enabled in PR 2A; configure a separate comparator provider.');
+  }
+
+  async reviewSurprise() {
+    throw new Error('OpenAI surprise-review calls are not enabled in PR 2A; configure a separate adversarial reviewer provider.');
+  }
+
   async errorMessage(response, label) {
     const body = (await response.text()).replaceAll(this.apiKey, '[redacted]').slice(0, 1000);
     return `${label} failed (${response.status}): ${body}`;
@@ -78,7 +94,7 @@ export class OpenAIProvider {
   }
 
   generateCandidates(context) {
-    return this.requestJson({ role: 'artist role', task: 'Generate materially different candidate briefs. Return a JSON object with a candidates array. Every candidate needs id, title, strategy, artifact_brief, composition, proposed_accident, medium, generation_prompt.', context, requiredKeys: ['candidates'] }).then((value) => value.candidates);
+    return this.requestJson({ role: 'artist role', task: 'Generate materially different candidate briefs. Return a JSON object with a candidates array. Every candidate needs id, title, strategy, artifact_brief, composition, planned_ambiguity, medium, generation_prompt. planned_ambiguity is an intentional hypothesis, not a discovered accident or surprise.', context, requiredKeys: ['candidates'] }).then((value) => value.candidates);
   }
 
   critiqueCandidate(context) {
@@ -86,7 +102,7 @@ export class OpenAIProvider {
   }
 
   reviseCandidate(context) {
-    return this.requestJson({ role: 'editor role', task: 'Revise the selected candidate in response to the strongest criticism without abandoning the locked intention. Return id, title, strategy, artifact_brief, composition, proposed_accident, medium, generation_prompt, parent_candidate_id, revision_reason.', context, requiredKeys: ['id', 'title', 'strategy', 'artifact_brief', 'composition', 'proposed_accident', 'medium', 'generation_prompt', 'parent_candidate_id', 'revision_reason'] });
+    return this.requestJson({ role: 'editor role', task: 'Revise the selected candidate in response to the strongest criticism without abandoning the locked intention. Return id, title, strategy, artifact_brief, composition, planned_ambiguity, medium, generation_prompt, parent_candidate_id, revision_reason. planned_ambiguity is intentional and must not be called discovered surprise.', context, requiredKeys: ['id', 'title', 'strategy', 'artifact_brief', 'composition', 'planned_ambiguity', 'medium', 'generation_prompt', 'parent_candidate_id', 'revision_reason'] });
   }
 
   curate(context) {

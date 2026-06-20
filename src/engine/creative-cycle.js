@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../core/canonical-json.js';
 import { id } from '../core/ids.js';
@@ -12,6 +13,13 @@ import { runCriticPanel } from '../roles/critics.js';
 import { curate } from '../roles/curator.js';
 import { consolidate } from '../roles/memory.js';
 import { resolveFeatures } from '../experiment/conditions.js';
+import {
+  buildComparisonPayload,
+  buildReviewPayload,
+  buildWitnessPayload,
+  evidenceResultFromEvents,
+  normalizeCandidatePlan
+} from './post-result-evidence.js';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -40,6 +48,7 @@ function cycleResultFromEvents({ events, cycleId, operationId, state, verificati
   const artifactAudit = cycleEvents.find((event) => event.type === 'artifact_audited')?.payload ?? null;
   const audiencePrediction = cycleEvents.find((event) => event.type === 'audience_predicted')?.payload ?? null;
   const memory = cycleEvents.find((event) => event.type === 'memory_consolidated')?.payload ?? null;
+  const postResultEvidence = evidenceResultFromEvents(cycleEvents);
   return {
     operationId,
     resumed,
@@ -54,6 +63,7 @@ function cycleResultFromEvents({ events, cycleId, operationId, state, verificati
     selected: manifest?.selected_candidate ?? null,
     artifactPath: manifest?.artifact_path ?? null,
     artifactAudit,
+    postResultEvidence,
     canonStatus: manifest?.canon_status ?? null,
     audiencePrediction,
     memory,
@@ -81,11 +91,26 @@ async function runCreativeCycleUnlocked({
   cycleIdOverride = null,
   operationId = null,
   resume = false,
-  crashAfter = null
+  crashAfter = null,
+  roleProviders = {}
 }) {
-  const state = await studio.initialize();
   const activeFeatures = resolveFeatures(features);
   const resolvedOperationId = operationId;
+  const creatorProvider = roleProviders.creator ?? provider;
+  const witnessProvider = roleProviders.artifactWitness ?? provider;
+  const comparatorProvider = roleProviders.deviationComparator ?? provider;
+  const surpriseReviewer = roleProviders.surpriseReviewer ?? provider;
+  if (generateImage) {
+    const unavailableRoles = [
+      ['artifact witness', witnessProvider],
+      ['deviation comparator', comparatorProvider],
+      ['surprise reviewer', surpriseReviewer]
+    ].filter(([, roleProvider]) => roleProvider?.supportsPostResultEvidence !== true);
+    if (unavailableRoles.length) {
+      throw new Error(`Post-result role provider configuration is required before image generation: ${unavailableRoles.map(([name]) => name).join(', ')}.`);
+    }
+  }
+  const state = await studio.initialize();
   const fingerprint = operationFingerprint({
     kind: 'creative_cycle',
     provider: provider.name,
@@ -95,7 +120,13 @@ async function runCreativeCycleUnlocked({
     ablate_memory: ablateMemory,
     features: activeFeatures,
     experiment: studio.experiment,
-    constitution: studio.constitution
+    constitution: studio.constitution,
+    ...(Object.keys(roleProviders).length ? { role_providers: {
+      creator: creatorProvider.name,
+      artifact_witness: witnessProvider.name,
+      deviation_comparator: comparatorProvider.name,
+      surprise_reviewer: surpriseReviewer.name
+    } } : {})
   });
   let events = await studio.ledger.readAll();
   const operationEvents = assertOperationCompatible(events, resolvedOperationId, fingerprint);
@@ -181,7 +212,7 @@ async function runCreativeCycleUnlocked({
     let lock = firstEvent('intention_locked')?.payload;
     if (!lock) {
       const formed = await formAndLockIntention({
-        provider, observation: attention.observation, state: agentState, constitution: studio.constitution
+        provider: creatorProvider, observation: attention.observation, state: agentState, constitution: studio.constitution
       });
       const intentionContent = {
         observation_id: attention.observation.id,
@@ -205,7 +236,7 @@ async function runCreativeCycleUnlocked({
     let candidates = firstEvent('candidates_generated')?.payload?.candidates;
     if (!candidates) {
       candidates = await makeCandidates({
-        provider, observation: attention.observation, necessity, intention, state: agentState,
+        provider: creatorProvider, observation: attention.observation, necessity, intention, state: agentState,
         constitution: studio.constitution, experiment: studio.experiment, cycleId
       });
       await studio.writeCycleFile(cycleId, '03-candidates.json', candidates);
@@ -254,7 +285,7 @@ async function runCreativeCycleUnlocked({
       const originalCritique = workingCritiques.find((critique) => critique.candidate_id === original.id);
       let revised = firstEvent('candidate_revised')?.payload?.revised_candidate;
       if (!revised) {
-        revised = await provider.reviseCandidate({
+        revised = await creatorProvider.reviseCandidate({
           candidate: original, critique: originalCritique, intention, state: agentState,
           constitution: studio.constitution, cycleId
         });
@@ -293,17 +324,79 @@ async function runCreativeCycleUnlocked({
     const selectedCritique = selected
       ? workingCritiques.find((critique) => critique.candidate_id === selected.id)
       : null;
-    let artifactPath = firstEvent('artifact_generated')?.payload?.artifact_path ?? null;
+    const existingArtifactEvent = firstEvent('artifact_generated');
+    let artifactPath = existingArtifactEvent?.payload?.artifact_path ?? null;
+    let artifactId = existingArtifactEvent?.payload?.artifact_id ?? null;
+    let artifactHash = existingArtifactEvent?.payload?.artifact_hash ?? null;
     let artifactAudit = firstEvent('artifact_audited')?.payload ?? null;
     let canonStatus = selected ? 'conceptual_only' : null;
-    if (selected && generateImage && provider.generateArtifact) {
+    if (selected && generateImage && creatorProvider.generateArtifact) {
       if (!artifactPath) {
         artifactPath = path.join(studio.cycleDirectory(cycleId), 'artifact.png');
-        await provider.generateArtifact({ prompt: selected.generation_prompt, outputPath: artifactPath });
+        await creatorProvider.generateArtifact({ prompt: selected.generation_prompt, outputPath: artifactPath });
+        artifactHash = sha256(await readFile(artifactPath));
+        artifactId = id('artifact');
         await append({
           type: 'artifact_generated', actor: 'image-provider',
-          payload: { candidate_id: selected.id, artifact_path: artifactPath }
+          payload: { candidate_id: selected.id, artifact_id: artifactId, artifact_hash: artifactHash, artifact_path: artifactPath }
         });
+      }
+      artifactHash ??= sha256(await readFile(artifactPath));
+      artifactId ??= `artifact_legacy_${artifactHash.slice(0, 20)}`;
+
+      if (!artifactAudit) {
+        let witness = firstEvent('artifact_witnessed')?.payload;
+        if (!witness) {
+          const witnessOutput = await witnessProvider.witnessArtifact({
+            artifact_id: artifactId,
+            artifact_path: artifactPath,
+            artifact_hash: artifactHash,
+            technical_context: { media_type: 'image', byte_length: (await readFile(artifactPath)).length }
+          });
+          witness = buildWitnessPayload({
+            output: witnessOutput, cycleId, artifactId, artifactHash,
+            lockEventId: firstEvent('intention_locked').event_id
+          });
+          maybeInjectCrash(crashAfter, 'before_artifact_witnessed_persistence');
+          await studio.writeCycleFile(cycleId, '06a-artifact-witness.json', witness);
+          await append({ type: 'artifact_witnessed', actor: 'role:artifact-witness', payload: witness });
+        }
+
+        let comparison = firstEvent('artifact_deviations_compared')?.payload;
+        if (!comparison) {
+          const plan = normalizeCandidatePlan(selected);
+          const comparisonOutput = await comparatorProvider.compareArtifactDeviation({
+            lockedIntention: intention,
+            plan,
+            witness,
+            artifact: { artifact_id: artifactId, artifact_hash: artifactHash }
+          });
+          comparison = buildComparisonPayload({
+            output: comparisonOutput, witness, plan, cycleId, artifactId, artifactHash,
+            lockEventId: firstEvent('intention_locked').event_id
+          });
+          maybeInjectCrash(crashAfter, 'before_artifact_deviations_compared_persistence');
+          await studio.writeCycleFile(cycleId, '06b-artifact-comparison.json', comparison);
+          await append({ type: 'artifact_deviations_compared', actor: 'role:deviation-comparator', payload: comparison });
+        }
+
+        let surpriseReview = firstEvent('surprise_reviewed')?.payload;
+        if (!surpriseReview) {
+          const reviewOutput = await surpriseReviewer.reviewSurprise({
+            lockedIntention: intention,
+            plan: normalizeCandidatePlan(selected),
+            witness,
+            comparison,
+            priorWorks: baseState.canon.map(({ cycle_id, title, candidate_id }) => ({ cycle_id, title, candidate_id }))
+          });
+          surpriseReview = buildReviewPayload({
+            output: reviewOutput, witness, comparison, cycleId, artifactId, artifactHash,
+            lockEventId: firstEvent('intention_locked').event_id
+          });
+          maybeInjectCrash(crashAfter, 'before_surprise_reviewed_persistence');
+          await studio.writeCycleFile(cycleId, '06c-surprise-review.json', surpriseReview);
+          await append({ type: 'surprise_reviewed', actor: 'role:adversarial-surprise-reviewer', payload: surpriseReview });
+        }
       }
       if (!artifactAudit) {
         artifactAudit = await provider.inspectArtifact({
@@ -325,7 +418,14 @@ async function runCreativeCycleUnlocked({
           payload: { candidate_id: selected.id, canon_status: canonStatus, threshold: studio.experiment.artifact_audit_threshold, audit: artifactAudit }
         });
       }
+    } else if (selected && !firstEvent('post_result_evidence_unavailable')) {
+      await append({
+        type: 'post_result_evidence_unavailable', actor: 'orchestrator',
+        payload: { reason: 'conceptual_only_no_artifact', artifact_id: null, confirmed_surprises: [] }
+      });
     }
+
+    const postResultEvidence = evidenceResultFromEvents(cycleEvents());
 
     let audiencePrediction = firstEvent('audience_predicted')?.payload ?? null;
     if (selected && activeFeatures.audienceModel && !audiencePrediction) {
@@ -362,6 +462,7 @@ async function runCreativeCycleUnlocked({
       audience_prediction: audiencePrediction,
       artifact_path: artifactPath,
       artifact_audit: artifactAudit,
+      post_result_evidence: postResultEvidence,
       canon_status: canonStatus,
       constitution_version: studio.constitution.version,
       generated_at: new Date().toISOString()
