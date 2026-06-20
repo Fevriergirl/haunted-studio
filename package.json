@@ -1,0 +1,43 @@
+{
+  "name": "haunted-studio",
+  "version": "0.1.0",
+  "description": "A role-separated research prototype for testing persistent artificial creative trajectories.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/cli.js run",
+    "cycle": "node src/cli.js run",
+    "status": "node src/cli.js status",
+    "verify": "node src/cli.js verify",
+    "serve": "node src/cli.js serve",
+    "reset": "node src/cli.js reset",
+    "test": "node --test",
+    "check": "node scripts/check.js",
+    "validate": "npm run check && npm test",
+    "report": "node src/cli.js report",
+    "doctor": "node src/cli.js doctor",
+    "demo": "node scripts/demo.js",
+    "experiment": "node src/cli.js experiment",
+    "experiment:smoke": "node src/cli.js experiment 1 .haunted-studio-experiment-smoke"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fevriergirl/haunted-studio.git"
+  },
+  "homepage": "https://github.com/Fevriergirl/haunted-studio#readme",
+  "bugs": {
+    "url": "https://github.com/Fevriergirl/haunted-studio/issues"
+  },
+  "keywords": [
+    "creative-ai",
+    "role-separated-orchestration",
+    "agent-memory",
+    "artificial-creativity",
+    "provenance",
+    "research-prototype"
+  ],
+  "license": "MIT"
+}

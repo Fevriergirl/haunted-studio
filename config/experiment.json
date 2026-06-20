@@ -1,0 +1,23 @@
+{
+  "experiment_name": "Haunted Studio Trajectory Experiment",
+  "candidate_count": 3,
+  "canon_threshold": 0.7,
+  "revision_threshold": 0.58,
+  "minimum_critic_confidence": 0.55,
+  "weights": {
+    "formal": 0.18,
+    "truth": 0.25,
+    "historical": 0.2,
+    "adversarial_survival": 0.2,
+    "productive_surprise": 0.17
+  },
+  "budgets": {
+    "maximum_canon_works": 12,
+    "maximum_cycles": 100,
+    "maximum_candidates_per_cycle": 5,
+    "maximum_revision_rounds": 1
+  },
+  "require_intention_lock": true,
+  "allow_rejection": true,
+  "artifact_audit_threshold": 0.68
+}

@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.haunted-studio/
+.haunted-studio*/
+experiments/
+coverage/
+*.log
+*.tmp
+*.zip
+*.tgz
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

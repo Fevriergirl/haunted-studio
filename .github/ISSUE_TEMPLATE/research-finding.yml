@@ -1,0 +1,28 @@
+name: Research finding
+about: Record evidence that supports, weakens, or complicates a hypothesis
+labels: [research]
+body:
+  - type: dropdown
+    id: effect
+    attributes:
+      label: Effect on hypothesis
+      options:
+        - Supports
+        - Weakens
+        - Complicates
+        - Inconclusive
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Include cycle IDs, ledger events, reviewer evidence, and comparison condition.
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: Strongest alternative explanation
+    validations:
+      required: true

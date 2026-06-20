@@ -1,0 +1,19 @@
+{
+  "name": "Haunted Studio",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm ci && npm run validate",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "eamodio.gitlens"
+      ]
+    }
+  },
+  "forwardPorts": [19820],
+  "portsAttributes": {
+    "19820": {
+      "label": "Haunted Studio observation mailbox",
+      "onAutoForward": "notify"
+    }
+  }
+}

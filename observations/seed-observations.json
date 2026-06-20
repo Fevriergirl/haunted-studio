@@ -1,0 +1,37 @@
+[
+  {
+    "id": "obs-001",
+    "source": "seed",
+    "text": "A woman faces four ornate mirrors. One mirror reflects an empty dress standing upright, as if she stepped out of herself.",
+    "tags": ["domestic-space", "identity", "absence", "femininity", "mirror"],
+    "rights": "user-authored"
+  },
+  {
+    "id": "obs-002",
+    "source": "seed",
+    "text": "A cheerful room has been repaired so many times that every repair has become more visible than the original damage.",
+    "tags": ["repair", "domestic-space", "concealment", "evidence"],
+    "rights": "project-authored"
+  },
+  {
+    "id": "obs-003",
+    "source": "seed",
+    "text": "A person folds a towel with unnecessary precision immediately after receiving terrible news.",
+    "tags": ["ritual", "grief", "control", "ordinary-object"],
+    "rights": "project-authored"
+  },
+  {
+    "id": "obs-004",
+    "source": "seed",
+    "text": "A corporate phrase about care is printed over a doorway no one can physically enter.",
+    "tags": ["institution", "language", "exclusion", "architecture"],
+    "rights": "project-authored"
+  },
+  {
+    "id": "obs-005",
+    "source": "seed",
+    "text": "A birthday cake remains perfect while the table beneath it slowly bows under an invisible weight.",
+    "tags": ["celebration", "pressure", "domestic-space", "concealment"],
+    "rights": "project-authored"
+  }
+]

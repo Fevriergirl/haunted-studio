@@ -1,0 +1,7 @@
+{
+  "target_event_id": "evt_replace_with_real_event_id",
+  "cycle_id": "cycle_replace_if_applicable",
+  "actor": "human-steward",
+  "reason": "The prior interpretation treated audience confusion as subtlety, but review evidence shows the visual premise was simply unreadable.",
+  "corrected_interpretation": "Do not reward this failure as ambiguity. Future work must establish a legible ordinary scene before introducing the impossible fact."
+}
