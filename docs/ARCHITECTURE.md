@@ -29,7 +29,9 @@ saturation. The assigned-attention experiment bypasses this selection.
 ### Artist role
 
 Forms a functional necessity statement, locks an intention, and produces
-candidate concepts. The intention is hashed before candidates exist.
+candidate concepts. The intention is hashed before candidates exist. Candidate
+`planned_ambiguity` is an intentional hypothesis, not evidence of an accident
+or surprise.
 
 ### Criticism and curation roles
 
@@ -37,10 +39,15 @@ Criticism scores candidates against formal, truth, historical, adversarial, and
 surprise criteria. Curation may accept, request one revision, or refuse all
 candidates. These are software role boundaries, not independent reviewers.
 
-### Artifact generation and audit
+### Artifact generation, post-result evidence, and audit
 
 Image generation is optional. Concept acceptance does not imply that an image
-exists. A generated file must pass a separate artifact audit to receive
+exists. After generation, a blind artifact witness receives only artifact
+identity, hash, representation/path, and minimal technical context. A separate
+comparator relates its observations to the locked plan, then an adversarial
+reviewer may confirm, reject, or leave unresolved a proposed surprise. These
+roles may share an offline provider object, but their call inputs remain
+isolated. A generated file must then pass a separate artifact audit to receive
 `artifact_audit_passed`; this internal status does not establish artistic merit.
 
 ### Audience prediction and human review
@@ -51,8 +58,10 @@ Reports must not combine the two as if they were equivalent evidence.
 
 ### Memory role
 
-Updates motifs, unresolved tensions, observation counts, and preserved
-surprises in projected state. It cannot edit prior ledger events.
+Updates motifs, unresolved tensions, and observation counts in projected state.
+PR 2A stops planned candidate fields from being promoted into surprise memory;
+typed evidence-driven memory and later-use records are deferred to PR 2B. The
+memory role cannot edit prior ledger events.
 
 ### Observation mailbox
 

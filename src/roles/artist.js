@@ -1,4 +1,5 @@
 import { requireArray, requireObject, requireString } from '../core/validation.js';
+import { normalizeNewCandidate } from '../engine/post-result-evidence.js';
 
 export async function formAndLockIntention({ provider, observation, state, constitution }) {
   const necessity = requireObject(await provider.formNecessity({ observation, state, constitution }), 'necessity');
@@ -28,7 +29,8 @@ export async function makeCandidates({ provider, observation, necessity, intenti
   requireArray(candidates, 'candidates');
   if (candidates.length === 0) throw new Error('Artist agent returned no candidates.');
   const ids = new Set();
-  for (const [index, candidate] of candidates.entries()) {
+  const normalizedCandidates = candidates.map(normalizeNewCandidate);
+  for (const [index, candidate] of normalizedCandidates.entries()) {
     requireObject(candidate, `candidates[${index}]`);
     for (const key of ['id', 'title', 'strategy', 'artifact_brief', 'generation_prompt']) {
       requireString(candidate[key], `candidates[${index}].${key}`);
@@ -36,5 +38,5 @@ export async function makeCandidates({ provider, observation, necessity, intenti
     if (ids.has(candidate.id)) throw new Error(`Duplicate candidate id: ${candidate.id}`);
     ids.add(candidate.id);
   }
-  return candidates.slice(0, experiment.budgets.maximum_candidates_per_cycle);
+  return normalizedCandidates.slice(0, experiment.budgets.maximum_candidates_per_cycle);
 }

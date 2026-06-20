@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Require blind post-result artifact evidence and adversarial review before a
+  deviation can be classified as productive surprise.
+- Treat legacy `proposed_accident` fields as planned ambiguity rather than
+  discovered evidence.
+- Preserve version-0 and pre-evidence version-1 ledger compatibility without
+  rewriting history.
+
 ## 0.1.0 - 2026-06-20
 
 Initial standalone Haunted Studio research prototype.

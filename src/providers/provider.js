@@ -1,4 +1,6 @@
 export class CreativeProvider {
+  get supportsPostResultEvidence() { return false; }
+
   get name() {
     throw new Error('Provider must expose a name.');
   }
@@ -13,5 +15,8 @@ export class CreativeProvider {
   async predictAudience() { throw new Error('Not implemented'); }
   async consolidateMemory() { throw new Error('Not implemented'); }
   async generateArtifact() { return null; }
+  async witnessArtifact() { throw new Error('Post-result artifact witness is not configured.'); }
+  async compareArtifactDeviation() { throw new Error('Post-result deviation comparator is not configured.'); }
+  async reviewSurprise() { throw new Error('Adversarial surprise reviewer is not configured.'); }
   async inspectArtifact() { return null; }
 }

@@ -64,6 +64,7 @@ export class Studio {
           (orphanedState.audience_findings?.length ?? 0) > 0 ||
           (orphanedState.corrections?.length ?? 0) > 0 ||
           (orphanedState.active_surprises?.length ?? 0) > 0 ||
+          (orphanedState.planned_hypotheses?.length ?? 0) > 0 ||
           (orphanedState.unresolved_tensions?.length ?? 0) > 0;
         if (claimsHistory) {
           throw new Error('Projected state is ahead of ledger: the ledger is empty but state claims history.');

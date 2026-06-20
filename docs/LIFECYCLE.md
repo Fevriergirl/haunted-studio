@@ -36,6 +36,15 @@ Version-0 events remain readable and verifiable. All later appends are version
 historical version-0 event payloads are retained as historical data; the strict
 registered-type and transition checks apply to new version-1 writes.
 
+### Pre-PR-2A version-1 compatibility
+
+Version-1 histories written before post-result evidence stages may contain the
+older direct transitions from accepted curation to audience/memory or from
+`artifact_generated` to `artifact_audited`. Verification uses an explicit
+stored-event compatibility path for those histories. New appends must follow
+the evidence-aware lifecycle below. Existing lines and hashes are never
+rewritten or silently upgraded.
+
 ## Cycle state machine
 
 A cycle begins with `cycle_started`. It has at most one terminal event:
@@ -59,13 +68,17 @@ The normal and optional forward transitions are:
 | `intention_locked` | `candidates_generated` |
 | `candidates_generated` | `critics_reported` |
 | `critics_reported` | `curation_decided` |
-| `curation_decided` with `accept` | `artifact_generated`, `audience_predicted`, or `memory_consolidated` |
+| `curation_decided` with `accept` | `artifact_generated` or `post_result_evidence_unavailable` |
 | `curation_decided` with `revise` | `candidate_revised` or `curation_overridden_by_condition` |
 | `curation_decided` with `reject_all` | `memory_consolidated` or `curation_overridden_by_condition` |
-| `curation_overridden_by_condition` | `artifact_generated`, `audience_predicted`, or `memory_consolidated` |
+| `curation_overridden_by_condition` | `artifact_generated` or `post_result_evidence_unavailable` |
 | `candidate_revised` | `revision_critiqued` |
 | `revision_critiqued` | a final `curation_decided` |
-| `artifact_generated` | `artifact_audited` |
+| `artifact_generated` | `artifact_witnessed` |
+| `artifact_witnessed` | `artifact_deviations_compared` |
+| `artifact_deviations_compared` | `surprise_reviewed` |
+| `surprise_reviewed` | `artifact_audited` |
+| `post_result_evidence_unavailable` | `audience_predicted` or `memory_consolidated` |
 | `artifact_audited` | `artifact_audit_not_passed`, `audience_predicted`, or `memory_consolidated` |
 | `artifact_audit_not_passed` | `audience_predicted` or `memory_consolidated` |
 | `audience_predicted` | `memory_consolidated` |
@@ -137,7 +150,7 @@ freshness checks, deterministic rebuild, explicit resume, and operation
 idempotency. This contract still does not implement:
 
 - comprehensive JSON Schema validation of role responses or event payloads;
-- changes to surprise, motif, memory, canon, audience, critic, scoring, or
-  ablation semantics.
+- motif provenance, evidence-driven memory, canon separation, audience,
+  scoring, and ablation semantics.
 
 Those concerns belong to later independently reviewed pull requests.
