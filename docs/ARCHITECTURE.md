@@ -14,7 +14,10 @@ for those roles.
 
 `Studio` owns the runtime directory, rebuildable state projection, work files,
 and append-only hash-linked ledger. `ledger.jsonl` is authoritative;
-`state.json` is a convenience projection.
+`state.json` is a convenience projection. Newly written events follow the
+versioned legality contract in [Cycle lifecycle and ledger-event
+compatibility](LIFECYCLE.md); existing unversioned events remain version-0
+history and are not rewritten.
 
 ### Attention role
 
@@ -68,7 +71,8 @@ to loopback by default and is not safe for public exposure.
 
 ## Failure and recovery
 
-- A failed cycle appends `cycle_failed` with a bounded error description.
+- A failed nonterminal cycle appends `cycle_failed` with a bounded error
+  description. A completed cycle cannot later receive `cycle_failed`.
 - Ledger verification detects sequence, previous-hash, and content-hash changes.
 - State can be rebuilt from completed ledger events.
 - User-facing reset archives the entire runtime directory before a new run.

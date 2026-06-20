@@ -4,6 +4,11 @@ import path from 'node:path';
 import { canonicalize } from './canonical-json.js';
 import { ensureDir } from './fs.js';
 import { id } from './ids.js';
+import {
+  CURRENT_EVENT_SCHEMA_VERSION,
+  validateEventBeforeAppend,
+  validateStoredVersionedEvent
+} from './event-contract.js';
 
 const GENESIS_HASH = '0'.repeat(64);
 
@@ -35,11 +40,19 @@ export class AppendOnlyLedger {
     }
   }
 
-  async append({ type, actor, cycleId = null, payload = {} }) {
+  async append({
+    type,
+    actor,
+    cycleId = null,
+    payload = {},
+    schemaVersion = CURRENT_EVENT_SCHEMA_VERSION
+  }) {
     const events = await this.readAll();
+    validateEventBeforeAppend({ type, actor, cycleId, payload, schemaVersion }, events);
     const previous = events.at(-1);
     const unsigned = {
       event_id: id('evt'),
+      schema_version: schemaVersion,
       sequence: events.length + 1,
       timestamp: new Date().toISOString(),
       type,
@@ -70,6 +83,11 @@ export class AppendOnlyLedger {
       const calculated = sha256(canonicalize(unsigned));
       if (calculated !== hash) {
         return { valid: false, count: events.length, error: `Hash mismatch at sequence ${event.sequence}` };
+      }
+      try {
+        validateStoredVersionedEvent(event, events.slice(0, index));
+      } catch (error) {
+        return { valid: false, count: events.length, error: `Invalid event at sequence ${event.sequence}: ${error.message}` };
       }
       expectedPrevious = hash;
     }
