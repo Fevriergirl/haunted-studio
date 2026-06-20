@@ -58,6 +58,14 @@ Each post-result evidence item records:
 - classification and review status;
 - `memory_eligible` and `later_used` flags.
 
+Pre-result plan items also receive stable content commitments. An anticipated
+risk copied from the locked intention links to `intention_locked`. Candidate
+ambiguities and variations link to the `candidates_generated` event and source
+candidate; a plan newly introduced by revision links to `candidate_revised` and
+the revised candidate. The plan ID commits to classification, text, source
+event, and source candidate so identical wording from different candidates does
+not collapse into one provenance identity.
+
 The envelope stores no credentials, API keys, private reviewer identity, or raw
 private human data. Evidence IDs and artifact IDs are opaque. Artifact paths may
 be used operationally but are not identity.

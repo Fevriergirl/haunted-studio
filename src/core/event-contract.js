@@ -70,6 +70,14 @@ const ALLOWED_NEXT_CYCLE_EVENTS = new Map([
 ]);
 
 const CURATION_DECISIONS = new Set(['accept', 'revise', 'reject_all']);
+const COMPARISON_CLASSIFICATIONS = new Set([
+  'expected_realization', 'planned_variation', 'neutral_deviation', 'technical_failure',
+  'random_incoherence', 'potentially_productive_surprise', 'unresolved'
+]);
+const REVIEW_CLASSIFICATIONS = new Set([
+  'expected_realization', 'planned_variation', 'neutral_deviation', 'generation_error',
+  'rejected_accident', 'productive_surprise', 'unresolved_deviation'
+]);
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -127,6 +135,10 @@ function validatePostResultEvidence(type, payload, cycleId, events) {
       if (item.source_role !== 'artifact_witness' || item.source_type !== 'artifact_observation' || item.classification !== 'artifact_observation') {
         throw new Error(`artifact witness observation ${index} has invalid source typing.`);
       }
+      if (typeof item.description !== 'string' || !item.description.trim() ||
+          typeof item.observable_support !== 'string' || !item.observable_support.trim()) {
+        throw new Error(`artifact witness observation ${index} requires description and observable support.`);
+      }
     });
     return;
   }
@@ -145,11 +157,27 @@ function validatePostResultEvidence(type, payload, cycleId, events) {
       const expectedPlanId = `plan_${createHash('sha256').update(canonicalize({
         classification: item.classification,
         description: item.description,
-        source_event_id: item.source_event_id
+        source_event_id: item.source_event_id,
+        source_candidate_id: item.source_candidate_id ?? null
       })).digest('hex').slice(0, 24)}`;
+      const sourceEvent = cycleEvents.find((event) => event.event_id === item.source_event_id);
+      const sourceCandidate = sourceEvent?.type === 'candidates_generated'
+        ? sourceEvent.payload?.candidates?.find((candidate) => candidate.id === item.source_candidate_id)
+        : sourceEvent?.type === 'candidate_revised' && sourceEvent.payload?.revised_candidate?.id === item.source_candidate_id
+          ? sourceEvent.payload.revised_candidate
+          : null;
+      const candidateValues = item.classification === 'planned_ambiguity'
+        ? [sourceCandidate?.planned_ambiguity, sourceCandidate?.proposed_accident, ...(sourceCandidate?.planned_ambiguities ?? [])]
+        : item.classification === 'planned_variation'
+          ? sourceCandidate?.planned_variations ?? []
+          : [sourceCandidate?.anticipated_risk, ...(sourceCandidate?.anticipated_risks ?? [])];
+      const candidateSourceValid = candidateValues.includes(item.description);
+      const lockedIntention = sourceEvent?.payload?.intention ?? {};
+      const intentionSourceValid = sourceEvent?.type === 'intention_locked' && item.classification === 'anticipated_risk' &&
+        item.source_candidate_id === null && [lockedIntention.anticipated_risk, ...(lockedIntention.anticipated_risks ?? [])].includes(item.description);
       if (!['anticipated_risk', 'planned_ambiguity', 'planned_variation'].includes(item.classification) ||
-          typeof item.description !== 'string' || item.source_event_id !== lockEventId || item.intentional !== true ||
-          item.plan_item_id !== expectedPlanId) {
+          typeof item.description !== 'string' || !item.description.trim() || item.intentional !== true ||
+          item.plan_item_id !== expectedPlanId || (!candidateSourceValid && !intentionSourceValid)) {
         throw new Error(`comparison plan item ${index} has invalid plan provenance.`);
       }
     }
@@ -158,6 +186,9 @@ function validatePostResultEvidence(type, payload, cycleId, events) {
       requireEvidenceEnvelope(item, { cycleId, artifact, lockEventId, label: `comparison evidence ${index}` });
       if (item.source_role !== 'deviation_comparator' || item.source_type !== 'artifact_deviation') {
         throw new Error(`comparison evidence ${index} has invalid source typing.`);
+      }
+      if (!COMPARISON_CLASSIFICATIONS.has(item.classification) || typeof item.description !== 'string' || !item.description.trim()) {
+        throw new Error(`comparison evidence ${index} has invalid classification or description.`);
       }
       if (!witnessIds.has(item.witness_evidence_id)) throw new Error(`comparison evidence ${index} has a broken witness evidence link.`);
       if (!Array.isArray(item.related_plan_item_ids) || item.related_plan_item_ids.some((planId) => !planIds.has(planId))) {
@@ -183,19 +214,25 @@ function validatePostResultEvidence(type, payload, cycleId, events) {
     throw new Error('surprise_reviewed has a broken comparison evidence link.');
   }
   const comparisonById = new Map(compared.comparisons.map((item) => [item.evidence_id, item]));
+  const witnessById = new Map(witness.observations.map((item) => [item.evidence_id, item]));
   payload.reviewed_evidence.forEach((item, index) => {
     requireEvidenceEnvelope(item, { cycleId, artifact, lockEventId, label: `reviewed evidence ${index}` });
-    if (item.source_role !== 'adversarial_surprise_reviewer') throw new Error(`reviewed evidence ${index} has invalid source typing.`);
+    if (item.source_role !== 'adversarial_surprise_reviewer' || item.source_type !== item.classification ||
+        !REVIEW_CLASSIFICATIONS.has(item.classification) || typeof item.description !== 'string' || !item.description.trim()) {
+      throw new Error(`reviewed evidence ${index} has invalid source typing, classification, or description.`);
+    }
     if (!Array.isArray(item.witness_evidence_ids) || item.witness_evidence_ids.some((witnessId) => !witnessIds.has(witnessId))) {
       throw new Error(`reviewed evidence ${index} has a broken witness evidence link.`);
     }
     if (item.classification !== 'productive_surprise') return;
     const source = comparisonById.get(item.comparison_evidence_id);
+    const sourceWitness = witnessById.get(source?.witness_evidence_id);
     const findings = item.adversarial_findings;
     const findingsPass = findings?.planned === false && findings?.trivial === false && findings?.incoherent === false &&
       findings?.common_in_prior_work === false && findings?.technical_defect === false && findings?.falsely_inferred === false &&
       findings?.observable_support === true && findings?.material_interpretive_change === true && findings?.relates_to_work === true;
-    if (source?.classification !== 'potentially_productive_surprise' || source.explicitly_planned || source.related_plan_item_ids?.length ||
+    if (source?.classification !== 'potentially_productive_surprise' || !sourceWitness?.observable_support?.trim() ||
+        source.explicitly_planned || source.related_plan_item_ids?.length ||
         !source.observable_support || !source.coherent || !source.material_interpretive_change || !source.relates_to_work ||
         item.review_status !== 'confirmed' || item.memory_eligible !== true || item.confidence <= 0 ||
         !Array.isArray(item.challenges) || item.challenges.length === 0 || !findingsPass) {

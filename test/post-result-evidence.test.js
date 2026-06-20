@@ -49,7 +49,7 @@ class EvidenceFixtureProvider extends DeterministicProvider {
       unresolved: 'A faint edge may be structural or incidental.',
       none: 'The expected arrangement is present without additional features.'
     };
-    return { observations: [{ description: descriptions[this.scenario], observable_support: this.scenario === 'unsupported' ? '' : 'artifact pixels', confidence: 0.9 }] };
+    return { observations: [{ description: descriptions[this.scenario], observable_support: this.scenario === 'unsupported' ? 'inspection found no matching pixels' : 'artifact pixels', confidence: 0.9 }] };
   }
 
   async compareArtifactDeviation(input) {

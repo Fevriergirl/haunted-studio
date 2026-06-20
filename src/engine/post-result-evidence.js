@@ -53,11 +53,16 @@ function baseEvidence({ cycleId, artifactId, artifactHash, sourceRole, sourceTyp
   };
 }
 
-function planItemId(classification, description, sourceEventId) {
-  return `plan_${createHash('sha256').update(canonicalize({ classification, description, source_event_id: sourceEventId })).digest('hex').slice(0, 24)}`;
+function planItemId(classification, description, sourceEventId, sourceCandidateId) {
+  return `plan_${createHash('sha256').update(canonicalize({
+    classification, description, source_event_id: sourceEventId, source_candidate_id: sourceCandidateId
+  })).digest('hex').slice(0, 24)}`;
 }
 
-export function normalizeCandidatePlan(candidate = {}, { lockedIntention = {}, lockEventId = null } = {}) {
+export function normalizeCandidatePlan(candidate = {}, {
+  lockedIntention = {}, lockEventId = null, candidateSourceEventId = null,
+  candidateId = candidate.id ?? null, originalCandidate = null, revisionSourceEventId = null
+} = {}) {
   const planned = [];
   if (Array.isArray(candidate.planned_ambiguities)) planned.push(...candidate.planned_ambiguities.filter((item) => typeof item === 'string' && item.trim()));
   if (typeof candidate.planned_ambiguity === 'string' && candidate.planned_ambiguity.trim()) planned.push(candidate.planned_ambiguity.trim());
@@ -65,19 +70,37 @@ export function normalizeCandidatePlan(candidate = {}, { lockedIntention = {}, l
     ? candidate.proposed_accident.trim()
     : null;
   if (legacy && !planned.includes(legacy)) planned.push(legacy);
-  const risks = [lockedIntention.anticipated_risk, ...(lockedIntention.anticipated_risks ?? []), candidate.anticipated_risk]
+  const lockedRisks = [lockedIntention.anticipated_risk, ...(lockedIntention.anticipated_risks ?? [])]
     .filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim());
+  const candidateRisks = [candidate.anticipated_risk]
+    .filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim());
+  const risks = [...new Set([...lockedRisks, ...candidateRisks])];
   const variations = Array.isArray(candidate.planned_variations)
     ? candidate.planned_variations.filter((item) => typeof item === 'string' && item.trim()).map((item) => item.trim())
     : [];
+  const originalHas = (classification, description) => {
+    if (!originalCandidate) return false;
+    const values = classification === 'planned_ambiguity'
+      ? [originalCandidate.planned_ambiguity, originalCandidate.proposed_accident, ...(originalCandidate.planned_ambiguities ?? [])]
+      : classification === 'planned_variation'
+        ? originalCandidate.planned_variations ?? []
+        : [originalCandidate.anticipated_risk, ...(originalCandidate.anticipated_risks ?? [])];
+    return values.includes(description);
+  };
+  const candidateSource = (classification, description) => originalHas(classification, description)
+    ? { sourceEventId: candidateSourceEventId, sourceCandidateId: originalCandidate.id }
+    : { sourceEventId: revisionSourceEventId ?? candidateSourceEventId, sourceCandidateId: candidateId };
   const planItems = [
-    ...[...new Set(risks)].map((description) => ({ classification: 'anticipated_risk', description })),
-    ...[...new Set(planned)].map((description) => ({ classification: 'planned_ambiguity', description })),
-    ...[...new Set(variations)].map((description) => ({ classification: 'planned_variation', description }))
+    ...[...new Set(lockedRisks)].map((description) => ({ classification: 'anticipated_risk', description, sourceEventId: lockEventId, sourceCandidateId: null })),
+    ...[...new Set(candidateRisks)].map((description) => ({ classification: 'anticipated_risk', description, ...candidateSource('anticipated_risk', description) })),
+    ...[...new Set(planned)].map((description) => ({ classification: 'planned_ambiguity', description, ...candidateSource('planned_ambiguity', description) })),
+    ...[...new Set(variations)].map((description) => ({ classification: 'planned_variation', description, ...candidateSource('planned_variation', description) }))
   ].map((item) => ({
-    plan_item_id: planItemId(item.classification, item.description, lockEventId),
-    ...item,
-    source_event_id: lockEventId,
+    plan_item_id: planItemId(item.classification, item.description, item.sourceEventId, item.sourceCandidateId),
+    classification: item.classification,
+    description: item.description,
+    source_event_id: item.sourceEventId,
+    source_candidate_id: item.sourceCandidateId,
     intentional: true
   }));
   return {

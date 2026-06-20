@@ -371,6 +371,13 @@ async function runCreativeCycleUnlocked({
       artifactId ??= `artifact_legacy_${artifactHash.slice(0, 20)}`;
 
       if (!artifactAudit) {
+        const generatedCandidatesEvent = firstEvent('candidates_generated');
+        const revisionSourceEvent = firstEvent('candidate_revised')?.payload?.revised_candidate?.id === selected.id
+          ? firstEvent('candidate_revised')
+          : null;
+        const originalCandidate = revisionSourceEvent
+          ? generatedCandidatesEvent.payload.candidates.find((candidate) => candidate.id === selected.parent_candidate_id)
+          : null;
         let witness = firstEvent('artifact_witnessed')?.payload;
         if (!witness) {
           const witnessOutput = await witnessProvider.witnessArtifact({
@@ -392,7 +399,11 @@ async function runCreativeCycleUnlocked({
         if (!comparison) {
           const plan = normalizeCandidatePlan(selected, {
             lockedIntention: intention,
-            lockEventId: firstEvent('intention_locked').event_id
+            lockEventId: firstEvent('intention_locked').event_id,
+            candidateSourceEventId: generatedCandidatesEvent.event_id,
+            candidateId: selected.id,
+            originalCandidate,
+            revisionSourceEventId: revisionSourceEvent?.event_id ?? null
           });
           const comparisonOutput = await comparatorProvider.compareArtifactDeviation({
             lockedIntention: intention,
@@ -415,7 +426,11 @@ async function runCreativeCycleUnlocked({
             lockedIntention: intention,
             plan: normalizeCandidatePlan(selected, {
               lockedIntention: intention,
-              lockEventId: firstEvent('intention_locked').event_id
+              lockEventId: firstEvent('intention_locked').event_id,
+              candidateSourceEventId: generatedCandidatesEvent.event_id,
+              candidateId: selected.id,
+              originalCandidate,
+              revisionSourceEventId: revisionSourceEvent?.event_id ?? null
             }),
             witness,
             comparison,
