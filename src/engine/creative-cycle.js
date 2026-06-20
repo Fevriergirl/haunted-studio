@@ -376,7 +376,7 @@ async function runCreativeCycleUnlocked({
           ? firstEvent('candidate_revised')
           : null;
         const originalCandidate = revisionSourceEvent
-          ? generatedCandidatesEvent.payload.candidates.find((candidate) => candidate.id === selected.parent_candidate_id)
+          ? generatedCandidatesEvent.payload.candidates.find((candidate) => candidate.id === revisionSourceEvent.payload.parent_candidate_id)
           : null;
         let witness = firstEvent('artifact_witnessed')?.payload;
         if (!witness) {

@@ -224,8 +224,12 @@ function validatePostResultEvidence(type, payload, cycleId, events) {
     if (!Array.isArray(item.witness_evidence_ids) || item.witness_evidence_ids.some((witnessId) => !witnessIds.has(witnessId))) {
       throw new Error(`reviewed evidence ${index} has a broken witness evidence link.`);
     }
+    const sourceComparison = comparisonById.get(item.comparison_evidence_id);
+    if (item.witness_evidence_ids.length !== 1 || item.witness_evidence_ids[0] !== sourceComparison?.witness_evidence_id) {
+      throw new Error(`reviewed evidence ${index} does not identify its comparison's source witness.`);
+    }
     if (item.classification !== 'productive_surprise') return;
-    const source = comparisonById.get(item.comparison_evidence_id);
+    const source = sourceComparison;
     const sourceWitness = witnessById.get(source?.witness_evidence_id);
     const findings = item.adversarial_findings;
     const findingsPass = findings?.planned === false && findings?.trivial === false && findings?.incoherent === false &&
