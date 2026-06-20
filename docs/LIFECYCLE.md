@@ -17,10 +17,11 @@ before persistence:
 - the event is legal at the cycle's current lifecycle position.
 
 An append that fails validation does not write a ledger line. Appends to the
-same canonical ledger path are serialized within one Node.js process, so two
+same resolved ledger path are serialized within one Node.js process, so two
 concurrent terminal attempts cannot both validate against the same head.
-Separate operating-system processes are not coordinated; running multiple
-writers against one studio is unsupported and remains a documented risk.
+Separate operating-system processes and alternate symlink paths are not
+coordinated; running multiple writers against one studio is unsupported and
+remains a documented risk.
 
 ### Version-0 compatibility
 
