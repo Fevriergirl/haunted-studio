@@ -185,7 +185,7 @@ Official API guides:
 
 | Command | Purpose |
 |---|---|
-| `npm run cycle` | Run one creative cycle |
+| `npm run cycle` | Run one creative cycle; add `-- --operation-id <id>` for retry safety |
 | `npm run status` | Print projected studio state |
 | `npm run verify` | Verify the ledger hash chain |
 | `npm run report` | Write a trajectory report |
@@ -215,12 +215,50 @@ The default ignored runtime directory is `.haunted-studio/`:
 `-- works/              per-cycle intentions, candidates, audits, and manifests
 ```
 
-The ledger is authoritative. Rebuild a lost or stale projection with:
+The ledger is authoritative. State records the exact ledger sequence, event ID,
+event hash, and event schema version it projects. Startup verifies the ledger
+and automatically rebuilds missing, legacy, or safely stale state. It stops on
+an invalid ledger, an ahead-of-ledger state, or divergent head identity.
+
+An explicit rebuild is also available:
 
 ```bash
 node src/cli.js rebuild-state
 npm run verify
 ```
+
+Use a stable operation identity for an externally retryable cycle:
+
+```bash
+node src/cli.js run --operation-id cycle-request-001
+```
+
+If a process stopped after a persisted nonterminal event, startup reports the
+cycle in `incomplete_cycles`. Continue it explicitly without repeating recorded
+provider outputs:
+
+```bash
+node src/cli.js run --operation-id cycle-request-001 --resume
+```
+
+Or terminate the incomplete operation by appending a legal `cycle_failed`
+recovery event:
+
+```bash
+node src/cli.js abandon cycle-request-001 --operation-id abandon-request-001
+```
+
+A legacy incomplete cycle that predates operation identities cannot be resumed.
+Terminate it explicitly by its recorded cycle identity:
+
+```bash
+node src/cli.js abandon --cycle-id cycle_legacy --operation-id abandon-request-legacy
+```
+
+The same `--operation-id` option applies to review, correct-memory, and fork
+commands. Matching retries are no-ops; conflicting payloads are rejected.
+See [projection recovery and idempotency](docs/PROJECTION-RECOVERY-DESIGN.md)
+for the startup decision table and compatibility behavior.
 
 ## Safe reset and forks
 
@@ -230,8 +268,14 @@ archive. It does not silently delete the ledger.
 Fork an existing history for path-dependence research:
 
 ```bash
-node src/cli.js fork .haunted-studio-branch-a "different observations"
+node src/cli.js fork .haunted-studio-branch-a "different observations" --operation-id fork-request-001
 ```
+
+Fork publication uses an operation-specific staging directory and verifies the
+copied ledger head before the target path appears. Retry with the same operation
+ID after an interrupted fork; do not manually repurpose staging directories.
+Source-scoped operation claims are runtime recovery metadata and are archived
+with the studio, not copied into the fork.
 
 Run the fork with `HAUNTED_STUDIO_HOME` pointing to that directory.
 

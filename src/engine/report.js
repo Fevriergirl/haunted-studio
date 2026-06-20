@@ -22,13 +22,15 @@ function entropy(counts) {
 }
 
 export async function buildTrajectoryReport({ studio }) {
-  const state = await studio.getState();
+  const state = await studio.initialize();
   const events = await studio.ledger.readAll();
   const verification = await studio.ledger.verify();
   const completed = events.filter((event) => event.type === 'cycle_completed');
   const failed = events.filter((event) => event.type === 'cycle_failed');
   const revisions = events.filter((event) => event.type === 'candidate_revised');
-  const reviews = events.filter((event) => event.type === 'human_review_recorded').map((event) => event.payload);
+  const reviews = events
+    .filter((event) => event.type === 'human_review_recorded')
+    .map((event) => event.payload.review ?? event.payload);
   const corrections = events.filter((event) => event.type === 'memory_corrected');
 
   const decisions = completed.map((event) => event.payload?.curation?.decision).filter(Boolean);

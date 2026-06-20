@@ -284,7 +284,13 @@ test('a final verification failure after completion cannot add cycle_failed', as
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-verify-failure-'));
   const studio = new Studio({ rootDir, constitution, experiment });
   await studio.initialize();
-  studio.ledger.verify = async () => ({ valid: false, error: 'injected final verification failure' });
+  const originalVerify = studio.ledger.verify.bind(studio.ledger);
+  studio.ledger.verify = async () => {
+    const events = await studio.ledger.readAll();
+    return events.some((event) => event.type === 'cycle_completed')
+      ? { valid: false, error: 'injected final verification failure' }
+      : originalVerify();
+  };
   await assert.rejects(
     runCreativeCycle({ studio, provider: new DeterministicProvider(), observations }),
     /injected final verification failure/

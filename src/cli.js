@@ -12,6 +12,9 @@ import { JsonlMailbox } from './mailbox/mailbox.js';
 import { startMailboxServer } from './mailbox/server.js';
 import { EXPERIMENT_CONDITIONS } from './experiment/conditions.js';
 import { runAblationExperiment } from './experiment/runner.js';
+import { recordMemoryCorrection } from './engine/memory-correction.js';
+import { recordMailboxConsumption } from './engine/mailbox-consumption.js';
+import { abandonCycle } from './engine/recovery.js';
 
 function parseArguments(argv) {
   const [command = 'run', ...tokens] = argv.slice(2);
@@ -62,27 +65,6 @@ function mailboxObservations(messages) {
   })).filter((observation) => typeof observation.text === 'string' && observation.text.trim());
 }
 
-async function appendMemoryCorrection({ studio, correctionFile }) {
-  const correction = JSON.parse(await (await import('node:fs/promises')).readFile(correctionFile, 'utf8'));
-  if (!correction.target_event_id || !correction.reason || !correction.corrected_interpretation) {
-    throw new Error('Correction file requires target_event_id, reason, and corrected_interpretation.');
-  }
-  const events = await studio.ledger.readAll();
-  if (!events.some((event) => event.event_id === correction.target_event_id)) {
-    throw new Error(`Target event does not exist: ${correction.target_event_id}`);
-  }
-  const event = await studio.ledger.append({
-    type: 'memory_corrected',
-    actor: correction.actor ?? 'human-steward',
-    cycleId: correction.cycle_id ?? null,
-    payload: correction
-  });
-  const state = await studio.getState();
-  state.corrections = [...(state.corrections ?? []), { correction_event_id: event.event_id, ...correction }];
-  await studio.saveState(state);
-  return event;
-}
-
 async function main() {
   const parsed = parseArguments(process.argv);
   const config = await loadProjectConfig();
@@ -112,16 +94,18 @@ async function main() {
       generateImage: parsed.flags.has('image'),
       condition: conditionName,
       features: conditionFeatures,
-      ablateMemory: parsed.flags.has('ablate-memory')
+      ablateMemory: parsed.flags.has('ablate-memory'),
+      operationId: parsed.values['operation-id'] ?? null,
+      resume: parsed.flags.has('resume')
     });
     if (pending.length) {
-      await mailbox.acknowledge(pending.map((message) => message.message_id));
-      await studio.ledger.append({
-        type: 'mailbox_observations_consumed',
-        actor: 'orchestrator',
+      await recordMailboxConsumption({
+        studio,
         cycleId: result.cycleId,
-        payload: { message_ids: pending.map((message) => message.message_id) }
+        messageIds: pending.map((message) => message.message_id),
+        operationId: parsed.values['mailbox-operation-id'] ?? `${result.operationId}:mailbox-consumption`
       });
+      await mailbox.acknowledge(pending.map((message) => message.message_id));
       result.verification = await studio.ledger.verify();
     }
     printCycle(result);
@@ -172,7 +156,12 @@ async function main() {
     await studio.initialize();
     const [cycleId, reviewFile] = parsed.positionals;
     if (!cycleId || !reviewFile) throw new Error('Usage: node src/cli.js review <cycle-id> <review.json>');
-    const result = await recordHumanReview({ studio, cycleId, reviewFile: path.resolve(reviewFile) });
+    const result = await recordHumanReview({
+      studio,
+      cycleId,
+      reviewFile: path.resolve(reviewFile),
+      operationId: parsed.values['operation-id'] ?? null
+    });
     console.log(`Recorded ${result.review.review_id} at ${result.reviewPath}`);
     return;
   }
@@ -181,7 +170,11 @@ async function main() {
     await studio.initialize();
     const [correctionFile] = parsed.positionals;
     if (!correctionFile) throw new Error('Usage: node src/cli.js correct-memory <correction.json>');
-    const event = await appendMemoryCorrection({ studio, correctionFile: path.resolve(correctionFile) });
+    const event = await recordMemoryCorrection({
+      studio,
+      correctionFile: path.resolve(correctionFile),
+      operationId: parsed.values['operation-id'] ?? null
+    });
     console.log(`Appended correction event ${event.event_id}. Earlier history was not edited.`);
     return;
   }
@@ -189,8 +182,28 @@ async function main() {
   if (parsed.command === 'fork') {
     const [target, label = 'experimental fork'] = parsed.positionals;
     if (!target) throw new Error('Usage: node src/cli.js fork <target-state-directory> [label]');
-    const result = await forkStudio({ studio, targetRoot: path.resolve(target), label });
+    const result = await forkStudio({
+      studio,
+      targetRoot: path.resolve(target),
+      label,
+      operationId: parsed.values['operation-id'] ?? null
+    });
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (parsed.command === 'abandon') {
+    await studio.initialize();
+    const [operationId] = parsed.positionals;
+    const cycleId = parsed.values['cycle-id'] ?? null;
+    if (!operationId && !cycleId) throw new Error('Usage: node src/cli.js abandon <cycle-operation-id> [--cycle-id <legacy-cycle-id>] [--operation-id <abandonment-operation-id>]');
+    const event = await abandonCycle({
+      studio,
+      operationId,
+      cycleId,
+      abandonmentOperationId: parsed.values['operation-id'] ?? null
+    });
+    console.log(`Abandoned incomplete cycle with terminal event ${event.event_id}.`);
     return;
   }
 
@@ -206,7 +219,6 @@ async function main() {
   }
 
   if (parsed.command === 'rebuild-state') {
-    await studio.initialize();
     const state = await studio.rebuildStateFromLedger();
     console.log(`Rebuilt state projection from the append-only ledger. Cycles: ${state.cycle_count}`);
     return;

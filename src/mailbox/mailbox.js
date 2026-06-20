@@ -2,32 +2,64 @@ import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ensureDir } from '../core/fs.js';
 import { id } from '../core/ids.js';
+import { assertOperationCompatible, operationFingerprint, operationIdentity, operationScopePath } from '../core/operations.js';
+
+const receiveQueues = new Map();
+
+async function serializeReceive(filePath, operation) {
+  const key = operationScopePath(filePath);
+  const previous = receiveQueues.get(key) ?? Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const queued = previous.then(() => gate);
+  receiveQueues.set(key, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (receiveQueues.get(key) === queued) receiveQueues.delete(key);
+  }
+}
 
 export class JsonlMailbox {
   constructor(filePath) {
     this.filePath = filePath;
   }
 
-  async receive({ type, payload, priority = 'normal', sender = 'external' }) {
+  async receive({ type, payload, priority = 'normal', sender = 'external', operation_id: operationId = null }) {
     if (typeof type !== 'string' || type.trim().length === 0) {
       throw new Error('Mailbox message type must be a non-empty string.');
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       throw new Error('Mailbox message payload must be an object.');
     }
-    const message = {
-      message_id: id('msg'),
-      type,
-      payload,
-      priority,
-      sender,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      acknowledged_at: null
-    };
-    await ensureDir(path.dirname(this.filePath));
-    await appendFile(this.filePath, `${JSON.stringify(message)}\n`, 'utf8');
-    return message;
+    const resolvedOperationId = operationIdentity(operationId, 'mailbox-receive-operation');
+    const fingerprint = operationFingerprint({ kind: 'mailbox_receive', type, payload, priority, sender });
+    return serializeReceive(this.filePath, async () => {
+      const messages = await this.list();
+      const prior = assertOperationCompatible(
+        messages.map((message) => ({ payload: message })),
+        resolvedOperationId,
+        fingerprint
+      )[0]?.payload;
+      if (prior) return prior;
+      const message = {
+        message_id: id('msg'),
+        operation_id: resolvedOperationId,
+        operation_fingerprint: fingerprint,
+        type,
+        payload,
+        priority,
+        sender,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        acknowledged_at: null
+      };
+      await ensureDir(path.dirname(this.filePath));
+      await appendFile(this.filePath, `${JSON.stringify(message)}\n`, 'utf8');
+      return message;
+    });
   }
 
   async list() {
