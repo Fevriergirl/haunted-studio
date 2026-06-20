@@ -111,6 +111,31 @@ test('field displacement: required content in the wrong field is flagged', () =>
   assert.equal(signalFor(displaced, 'inc_signature').signal_type, 'field_displacement');
 });
 
+// Discovered by scripts/fidelity-probe.js: a clean substring match is not proof
+// of presence. Rhetorical/counterfactual framing must escalate, not affirm.
+test('rhetorical denial of a required feature escalates instead of silently affirming', () => {
+  const f = frozen();
+  const signals = detectSignals(f, { basis: 'artifact_description', fields: { foreground: 'a red circle? hardly — only flat grey remains', corner: 'a small signature' } });
+  const circle = signalFor(signals, 'inc_circle');
+  assert.equal(circle.signal_type, 'ambiguous_presence');
+  assert.equal(circle.is_breach_signal, true);
+  assert.ok(raisePossibleViolations(f, signals).some((violation) => violation.target_item_id === 'inc_circle'));
+});
+
+test('counterfactual framing of a required feature escalates instead of affirming', () => {
+  const f = frozen();
+  const signals = detectSignals(f, { basis: 'artifact_description', fields: { foreground: 'where a red circle should be, there is nothing', corner: 'a small signature' } });
+  assert.equal(signalFor(signals, 'inc_circle').signal_type, 'ambiguous_presence');
+});
+
+test('an unambiguous honored feature still affirms and is not a breach', () => {
+  const f = frozen();
+  const signals = detectSignals(f, { basis: 'artifact_description', fields: { foreground: 'a bold red circle dominates the foreground', corner: 'a small signature' } });
+  const circle = signalFor(signals, 'inc_circle');
+  assert.equal(circle.signal_type, 'affirmed_presence');
+  assert.equal(circle.is_breach_signal, false);
+});
+
 test('contradiction: maker fidelity claim does not erase an independent breach signal', () => {
   const f = frozen();
   const report = makerSelfReport(f, { honored: true, statement: 'I honored every commitment.' });

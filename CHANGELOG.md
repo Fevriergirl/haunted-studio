@@ -17,6 +17,11 @@
   defense-in-depth contract validation (commitment cannot be rewritten, the
   detector cannot carry a verdict, allegations must reference real signals, and
   a pixel-level claim cannot be confirmed from artifact-description evidence).
+- Close a silent false-affirmation channel discovered by `scripts/fidelity-probe.js`:
+  rhetorical or counterfactual framing of a required feature (e.g. "a red
+  circle? hardly — only flat grey") now escalates to a challengeable
+  `ambiguous_presence` signal instead of a terminal `affirmed_presence`. See
+  `docs/FIDELITY-PROBE-FINDINGS.md`.
 
 ## 0.1.0 - 2026-06-20
 
