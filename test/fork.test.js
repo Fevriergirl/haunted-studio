@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Studio } from '../src/core/studio.js';
@@ -115,4 +115,22 @@ test('fork operation identity conflicts when reused for a different target or la
     forkStudio({ studio, targetRoot: path.join(parent, 'fork-b'), label: 'second', operationId }),
     /operation conflict/i
   );
+});
+
+test('fork preserves and rejects an unmarked staging directory of unknown ownership', async () => {
+  const parent = await mkdtemp(path.join(os.tmpdir(), 'haunted-fork-unmarked-staging-'));
+  const rootDir = path.join(parent, 'source-studio');
+  const targetRoot = path.join(parent, 'forked-studio');
+  const operationId = 'operation_unmarked_staging';
+  const { operationFingerprint } = await import('../src/core/operations.js');
+  const stagingRoot = `${targetRoot}.fork-staging-${operationFingerprint({ operation_id: operationId }).slice(0, 16)}`;
+  await mkdir(stagingRoot, { recursive: true });
+  const sentinel = path.join(stagingRoot, 'unrelated.txt');
+  await writeFile(sentinel, 'preserve me');
+  const studio = new Studio({ rootDir, constitution, experiment });
+  await assert.rejects(
+    forkStudio({ studio, targetRoot, label: 'must not delete', operationId }),
+    /unmarked fork staging directory/i
+  );
+  assert.equal(await readFile(sentinel, 'utf8'), 'preserve me');
 });
