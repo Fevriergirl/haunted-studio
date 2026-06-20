@@ -47,4 +47,34 @@ test('observation mailbox handles health, malformed JSON, and valid messages', a
   assert.equal(valid.status, 202);
   assert.equal((await mailbox.poll()).length, 1);
   assert.equal((await ledger.verify()).valid, true);
+
+  const retryBody = {
+    operation_id: 'operation_mailbox_receive_retry',
+    type: 'observation_signal',
+    sender: 'test',
+    payload: { text: 'An idempotent observation.', rights: 'test-authored' }
+  };
+  const firstRetry = await fetch(`${baseUrl}/mailbox/receive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(retryBody)
+  });
+  const secondRetry = await fetch(`${baseUrl}/mailbox/receive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(retryBody)
+  });
+  assert.equal(firstRetry.status, 202);
+  assert.equal(secondRetry.status, 202);
+  assert.equal((await firstRetry.json()).message_id, (await secondRetry.json()).message_id);
+  assert.equal((await mailbox.list()).length, 2);
+  assert.equal((await ledger.readAll()).filter((event) => event.type === 'mailbox_message_received').length, 2);
+
+  const conflict = await fetch(`${baseUrl}/mailbox/receive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...retryBody, payload: { text: 'Conflicting payload.' } })
+  });
+  assert.equal(conflict.status, 400);
+  assert.match((await conflict.json()).error, /operation conflict/i);
 });
