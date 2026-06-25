@@ -1,5 +1,6 @@
 export class CreativeProvider {
   get supportsPostResultEvidence() { return false; }
+  get supportsFidelityAdjudication() { return false; }
 
   get name() {
     throw new Error('Provider must expose a name.');
@@ -19,4 +20,6 @@ export class CreativeProvider {
   async compareArtifactDeviation() { throw new Error('Post-result deviation comparator is not configured.'); }
   async reviewSurprise() { throw new Error('Adversarial surprise reviewer is not configured.'); }
   async inspectArtifact() { return null; }
+  async reportFidelity() { throw new Error('Fidelity self-report is not configured.'); }
+  async adjudicateFidelity() { throw new Error('Adversarial fidelity reviewer is not configured.'); }
 }

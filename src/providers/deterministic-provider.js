@@ -28,6 +28,32 @@ export class DeterministicProvider {
     return true;
   }
 
+  get supportsFidelityAdjudication() {
+    return true;
+  }
+
+  async reportFidelity() {
+    // The offline maker asserts full fidelity. This is the interesting case:
+    // independent detection over the witness may contradict it, and the
+    // disagreement is preserved rather than resolved by the maker's word.
+    return {
+      honored: true,
+      disclosed_deviations: [],
+      statement: 'The offline maker asserts full fidelity to the locked intention.'
+    };
+  }
+
+  async adjudicateFidelity() {
+    // The offline witness makes no decodable visual claim, so neither confirming
+    // nor clearing an allegation is honest. The verdict is undetectable.
+    return {
+      verdict: 'undetectable',
+      challenges: ['The offline witness supplied no decodable visual evidence to confirm or clear the allegation.'],
+      findings: { evidence_basis: 'artifact_description', image_inspected: false },
+      confidence: 0.2
+    };
+  }
+
   get name() {
     return 'deterministic';
   }

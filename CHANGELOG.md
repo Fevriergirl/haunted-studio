@@ -22,6 +22,13 @@
   circle? hardly — only flat grey") now escalates to a challengeable
   `ambiguous_presence` signal instead of a terminal `affirmed_presence`. See
   `docs/FIDELITY-PROBE-FINDINGS.md`.
+- Orchestrate fidelity adjudication over a completed cycle with role isolation
+  (`runFidelityAdjudication`): the commitment is frozen from the locked
+  intention, detection runs deterministically over the blind witness (never the
+  maker's claims), the maker self-report and the adversarial reviewer are
+  separate providers, and the run is resumable and idempotent. The offline
+  provider returns an honest `undetectable` verdict because the witness makes no
+  decodable visual claim.
 
 ## 0.1.0 - 2026-06-20
 
