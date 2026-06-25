@@ -29,11 +29,20 @@ export const VERDICTS = new Set(['confirmed', 'rejected', 'unresolved', 'undetec
 export const EVIDENCE_BASES = new Set(['artifact_description', 'pixel_inspection', 'maker_report']);
 
 // Signal types that allege a potential breach (they raise a possible violation).
-const BREACH_SIGNALS = new Set(['omission', 'negated_presence', 'quoted_requirement', 'field_displacement', 'prohibited_presence']);
+// `ambiguous_presence` exists because a clean substring match is not proof of
+// presence: rhetorical or counterfactual framing ("a red circle? hardly",
+// "where a red circle should be, there is nothing") matches the term yet
+// describes its absence. Rather than silently affirm — which would close the
+// pipeline before any adversarial review — the detector escalates the doubt to
+// a challengeable allegation. Escalation is the safe direction.
+const BREACH_SIGNALS = new Set(['omission', 'negated_presence', 'quoted_requirement', 'field_displacement', 'prohibited_presence', 'ambiguous_presence']);
 // Signal types that are explicitly NOT breaches (recorded for honesty/audit).
 const NON_BREACH_SIGNALS = new Set(['affirmed_presence', 'affirmed_avoidance', 'synonym_presence', 'quoted_prohibition', 'no_prohibited_signal']);
 
 const NEGATION_WORDS = ['not', 'no', 'without', 'never', 'excludes', 'omits', 'lacks', 'absent', 'missing', 'fails to', 'failed to', 'instead of'];
+// Markers that a clean term match sits inside a doubtful, rhetorical, or
+// counterfactual frame — i.e. the term is named but its presence is in question.
+const DOUBT_MARKERS = ['?', 'hardly', 'barely', 'should be', 'supposed to', 'meant to be', 'would have', 'no longer', 'instead of', 'rather than', 'nothing', 'is absent', 'is missing', 'where a', 'if only', 'fails to', 'never quite'];
 const ATTRIBUTION_PHRASES = ['the brief', 'the intention', 'the commitment', 'the plan', 'was asked', 'were asked', 'required', 'instructed', 'supposed to', 'meant to', 'requirement', 'requested', 'specified', 'called for'];
 
 function requireObject(value, label) {
@@ -129,6 +138,15 @@ function locate(text, term) {
   return { present: true, negated, quoted: quotedByMark || attributed };
 }
 
+function framedAsDoubtful(text, term) {
+  const haystack = String(text).toLowerCase();
+  const needle = String(term).toLowerCase();
+  const index = haystack.indexOf(needle);
+  if (index === -1) return false;
+  const window = haystack.slice(Math.max(0, index - 24), Math.min(haystack.length, index + needle.length + 40));
+  return DOUBT_MARKERS.some((marker) => window.includes(marker));
+}
+
 function cleanPresenceFields(artifactFields, term) {
   return Object.entries(artifactFields)
     .map(([field, text]) => [field, locate(text, term)])
@@ -172,7 +190,14 @@ export function detectSignals(frozen, artifact = {}) {
     const clean = cleanPresenceFields(fields, item.term);
     const expected = item.expected_field ?? null;
     if (clean.length > 0 && (expected === null || clean.includes(expected))) {
-      signals.push(signal(frozen, { evidenceBasis: basis, signalType: 'affirmed_presence', targetItemId: item.id, targetField: expected ?? clean[0], description: `"${item.term}" appears as required.`, strength: 0.4, pixelLevel: item.pixel_level }));
+      const matchField = expected ?? clean[0];
+      if (framedAsDoubtful(fields[matchField], item.term)) {
+        // The term matched, but its frame casts doubt on real presence. Do not
+        // affirm and close the pipeline; raise a challengeable allegation.
+        signals.push(signal(frozen, { evidenceBasis: basis, signalType: 'ambiguous_presence', targetItemId: item.id, targetField: matchField, description: `"${item.term}" is named in ${matchField}, but the surrounding language casts doubt on whether it is actually present; escalating for review rather than affirming.`, strength: 0.55, pixelLevel: item.pixel_level }));
+      } else {
+        signals.push(signal(frozen, { evidenceBasis: basis, signalType: 'affirmed_presence', targetItemId: item.id, targetField: matchField, description: `"${item.term}" appears as required.`, strength: 0.4, pixelLevel: item.pixel_level }));
+      }
       continue;
     }
     if (clean.length > 0) {
