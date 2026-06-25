@@ -8,6 +8,11 @@
   discovered evidence.
 - Preserve version-0 and pre-evidence version-1 ledger compatibility without
   rewriting history.
+- Add a standalone fidelity-adjudication module (research slice): frozen
+  intention, maker self-report, non-authoritative independent signal detection,
+  possible violation, adversarial challenge, and confirmed/rejected/unresolved/
+  undetectable verdicts, with an inclusive canon-threshold correction. Not yet
+  wired into the live cycle.
 
 ## 0.1.0 - 2026-06-20
 
