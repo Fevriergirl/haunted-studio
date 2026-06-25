@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Studio } from '../src/core/studio.js';
 import { runCreativeCycle } from '../src/engine/creative-cycle.js';
-import { runFidelityAdjudication } from '../src/engine/fidelity-cycle.js';
+import { runFidelityAdjudication, commitmentFromIntention } from '../src/engine/fidelity-cycle.js';
 import { DeterministicProvider } from '../src/providers/deterministic-provider.js';
 import { readJson } from '../src/core/fs.js';
 
@@ -55,6 +55,9 @@ test('fidelity adjudication over a completed cycle persists events and preserves
   const result = await runFidelityAdjudication({ studio, cycleId, provider });
 
   assert.equal(result.status, 'available');
+  // One provider fills every role offline, so the reviewer is not independent;
+  // this is recorded honestly rather than hidden.
+  assert.equal(result.role_isolated, false);
   // The maker asserted full fidelity, but the non-committal witness yields
   // omission allegations the reviewer cannot clear: disagreement is preserved.
   assert.equal(result.adjudication.maker_claims_fidelity, true);
@@ -95,11 +98,24 @@ test('roles are isolated: maker self-report and adversarial review use different
   const { studio, cycleId } = await completedImageCycle();
   const maker = new ImageFixtureProvider();
   const reviewer = new ImageFixtureProvider();
-  await runFidelityAdjudication({ studio, cycleId, provider: maker, roleProviders: { creator: maker, fidelityReviewer: reviewer } });
+  const result = await runFidelityAdjudication({ studio, cycleId, provider: maker, roleProviders: { creator: maker, fidelityReviewer: reviewer } });
   assert.equal(maker.fidelityReportCalls, 1);
   assert.equal(maker.fidelityAdjudicateCalls, 0);
   assert.equal(reviewer.fidelityReportCalls, 0);
   assert.ok(reviewer.fidelityAdjudicateCalls > 0);
+  // A distinct reviewer is recorded as independent, on the result and on each verdict.
+  assert.equal(result.role_isolated, true);
+  const adjudicated = (await studio.ledger.readAll()).filter((event) => event.cycle_id === cycleId && event.type === 'fidelity_adjudicated');
+  assert.ok(adjudicated.every((event) => event.payload.findings?.reviewer_independent_of_maker === true));
+});
+
+test('commitmentFromIntention accepts strings and structured items and drops empties', () => {
+  const commitment = commitmentFromIntention({
+    must_include: ['a red circle', { term: 'a signature' }, '', { notATerm: true }, 42],
+    must_avoid: ['  text  ']
+  });
+  assert.deepEqual(commitment.must_include.map((item) => item.term), ['a red circle', 'a signature']);
+  assert.deepEqual(commitment.must_avoid.map((item) => item.term), ['text']);
 });
 
 test('a conceptual-only cycle has no blind witness and reports fidelity unavailable', async () => {

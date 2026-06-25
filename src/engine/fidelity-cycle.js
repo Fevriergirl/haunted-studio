@@ -32,10 +32,19 @@ import {
   fidelityViolationsAllegedEvent
 } from './fidelity-ledger.js';
 
-function commitmentFromIntention(intention = {}) {
+export function commitmentFromIntention(intention = {}) {
+  // Accept both plain-string commitment items and structured { term } items so
+  // a structured intention is not silently dropped into an empty commitment
+  // (which would read as "no required features" — absence masquerading as
+  // compliance at the boundary).
   const toItems = (value, prefix) => (Array.isArray(value) ? value : [])
-    .filter((entry) => typeof entry === 'string' && entry.trim())
-    .map((term, index) => ({ id: `${prefix}_${index}`, term: term.trim() }));
+    .map((entry) => {
+      if (typeof entry === 'string') return entry.trim();
+      if (entry && typeof entry === 'object' && typeof entry.term === 'string') return entry.term.trim();
+      return '';
+    })
+    .filter((term) => term.length > 0)
+    .map((term, index) => ({ id: `${prefix}_${index}`, term }));
   return {
     must_include: toItems(intention.must_include, 'inc'),
     must_avoid: toItems(intention.must_avoid, 'avoid')
@@ -85,11 +94,19 @@ async function runFidelityAdjudicationUnlocked({ studio, cycleId, provider, role
   const intention = lockEvent.payload.intention ?? lockEvent.payload;
   const commitment = commitmentFromIntention(intention);
 
+  // Honest provenance: the adversarial reviewer can only count as independent
+  // if it is a different provider than the maker. Offline runs legitimately use
+  // one provider for every role, so this is recorded rather than forbidden — a
+  // confirmed verdict from a non-isolated reviewer is self-adjudication.
+  const reviewerIndependent = reviewer !== maker;
+
   const fidelityEvents = () => events.filter((event) => event.cycle_id === cycleId && typeof event.type === 'string' && event.type.startsWith('fidelity_'));
   const firstFidelity = (type) => fidelityEvents().find((event) => event.type === type);
+  let appended = false;
   const append = async (spec) => {
     const event = await studio.ledger.append({ ...spec, cycleId });
     events.push(event);
+    appended = true;
     return event;
   };
 
@@ -131,16 +148,19 @@ async function runFidelityAdjudicationUnlocked({ studio, cycleId, provider, role
     const verdict = adjudicate(violation, {
       verdict: decision.verdict,
       challenges: decision.challenges ?? [],
-      findings: decision.findings ?? {},
+      // The reviewer cannot fake its own independence, so the orchestration
+      // stamps the objective fact onto the persisted finding.
+      findings: { ...(decision.findings ?? {}), reviewer_independent_of_maker: reviewerIndependent },
       confidence: decision.confidence ?? 0
     });
     await append(fidelityAdjudicatedEvent(verdict, cycleId));
   }
 
-  await studio.projectAndSave('fidelity_adjudicated');
+  if (appended) await studio.projectAndSave('fidelity_adjudicated');
   return {
     cycleId,
     status: 'available',
+    role_isolated: reviewerIndependent,
     adjudication: deriveAdjudication(fidelityRecordsFromEvents(events, cycleId))
   };
 }

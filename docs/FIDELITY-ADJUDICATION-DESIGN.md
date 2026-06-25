@@ -135,6 +135,10 @@ score-only promotion:
    provider. The run is resumable and idempotent, and the deterministic provider
    returns an honest `undetectable` verdict because the offline witness makes no
    decodable visual claim. Conceptual-only cycles report fidelity `unavailable`.
+   Offline runs legitimately use one provider for every role, so reviewer
+   independence is not forbidden but **recorded**: each verdict carries
+   `findings.reviewer_independent_of_maker`, and a confirmed verdict from a
+   non-isolated reviewer is therefore visibly self-adjudication.
 3. Expose `deriveAdjudication` through the projection reducer so confirmed
    concealed deviations gate canon via `canonEligibility`.
 4. Feed real pixel inspection (not description) for any `pixel_level` commitment
