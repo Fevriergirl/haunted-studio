@@ -125,13 +125,26 @@ score-only promotion:
    first, the commitment hash cannot be rewritten, a detection signal cannot
    carry a verdict, an allegation must reference real signals, and a pixel-level
    claim cannot be confirmed from artifact-description evidence.
-2. Run `detectSignals` from a dedicated, role-isolated detector provider, and
-   `adjudicate` from an adversarial reviewer provider, both separate from the
-   maker.
+2. **Done.** Orchestrate the pipeline over a completed cycle with role
+   isolation, in `src/engine/fidelity-cycle.js` (`runFidelityAdjudication`):
+   the commitment is frozen from the cycle's locked intention; the artifact
+   description is the BLIND WITNESS output, so detection never reads the maker's
+   claims; the maker self-report comes from the creator provider; detection is a
+   deterministic function over the independent witness (no provider — it cannot
+   be argued with); and adjudication comes from a separate adversarial-reviewer
+   provider. The run is resumable and idempotent, and the deterministic provider
+   returns an honest `undetectable` verdict because the offline witness makes no
+   decodable visual claim. Conceptual-only cycles report fidelity `unavailable`.
+   Offline runs legitimately use one provider for every role, so reviewer
+   independence is not forbidden but **recorded**: each verdict carries
+   `findings.reviewer_independent_of_maker`, and a confirmed verdict from a
+   non-isolated reviewer is therefore visibly self-adjudication.
 3. Expose `deriveAdjudication` through the projection reducer so confirmed
    concealed deviations gate canon via `canonEligibility`.
 4. Feed real pixel inspection (not description) for any `pixel_level` commitment
-   before a pixel-level verdict may be confirmed.
+   before a pixel-level verdict may be confirmed. This is also the structural
+   answer to the probe finding: stop treating any description-only affirmation
+   as terminal.
 
 ## Limits
 
