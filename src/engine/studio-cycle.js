@@ -30,13 +30,13 @@ function artifactsDir(studio, cycleId) {
   return path.join(studio.rootDir, 'artifacts', 'cycles', cycleId);
 }
 
-async function saveArtifactBundle({ studio, seed, mode, result }) {
+async function saveArtifactBundle({ studio, seed, mode, extension, result }) {
   if (!result.selected || !result.artifactPath) return null;
   const cycleId = result.cycleId;
   const dir = artifactsDir(studio, cycleId);
   await ensureDir(dir);
 
-  const artifactFile = path.join(dir, 'artifact.svg');
+  const artifactFile = path.join(dir, `artifact.${extension}`);
   await writeFile(artifactFile, await readFile(result.artifactPath));
 
   const events = await studio.ledger.readAll();
@@ -62,7 +62,7 @@ async function saveArtifactBundle({ studio, seed, mode, result }) {
   };
   await writeJsonAtomic(path.join(dir, 'metadata.json'), metadata);
 
-  return { dir, artifactFile, metadata, artifactUrl: `/artifacts/cycles/${cycleId}/artifact.svg` };
+  return { dir, artifactFile, metadata, artifactUrl: `/artifacts/cycles/${cycleId}/artifact.${extension}` };
 }
 
 export async function beginStudioCycle({ studio, seed, mode = 'mock', operationId = null }) {
@@ -72,7 +72,7 @@ export async function beginStudioCycle({ studio, seed, mode = 'mock', operationI
     studio, provider, observations: [observation], generateImage: true,
     features: { refusal: false }, operationId
   });
-  const bundle = await saveArtifactBundle({ studio, seed, mode, result });
+  const bundle = await saveArtifactBundle({ studio, seed, mode: provider.artifactMode, extension: provider.artifactExtension, result });
   return {
     cycle_id: result.cycleId,
     mode: provider.artifactMode,

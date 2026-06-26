@@ -184,9 +184,19 @@ node src/cli.js run --seed "a kitchen that quietly refuses to be entered"
 ```
 
 Artifacts and a metadata sidecar are saved under
-`<studio>/artifacts/cycles/<cycleId>/`. Set `HAUNTED_STUDIO_ARTIFACT=image`
-(with `HAUNTED_STUDIO_IMAGE_API_KEY`) to switch to real image mode once that
-provider is wired.
+`<studio>/artifacts/cycles/<cycleId>/`. For real images, set
+`HAUNTED_STUDIO_ARTIFACT=image` and provide an OpenAI-images-compatible endpoint:
+
+```bash
+export HAUNTED_STUDIO_ARTIFACT=image
+export HAUNTED_STUDIO_IMAGE_API_KEY=sk-...          # required; never logged or stored
+export HAUNTED_STUDIO_IMAGE_BASE_URL=https://api.openai.com/v1   # optional
+export HAUNTED_STUDIO_IMAGE_MODEL=gpt-image-2       # optional
+npm run studio
+```
+
+The key is read only from the environment, never written to metadata or logs, and
+redacted from any error message. Mock mode remains the default and needs no key.
 
 The interface has no authentication and is intended for local use only. It binds
 to `127.0.0.1` and rejects non-loopback `Host` headers; **do not** set

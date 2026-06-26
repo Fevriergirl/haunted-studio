@@ -38,6 +38,7 @@ export function mockArtifactSvg(prompt) {
 
 export class MockArtifactProvider {
   get mode() { return 'mock'; }
+  get fileExtension() { return 'svg'; }
 
   async generateArtifact({ prompt, outputPath }) {
     await ensureDir(path.dirname(outputPath));
@@ -46,21 +47,52 @@ export class MockArtifactProvider {
   }
 }
 
+const IMAGE_REQUEST_TIMEOUT_MS = 120_000;
+
+// Calls an OpenAI-images-compatible endpoint. Credentials come only from the
+// environment and are never logged, embedded in metadata, or returned in an
+// error — every outward message is redacted.
 export class ImageArtifactProvider {
-  constructor(env = process.env) {
+  constructor(env = process.env, fetchImpl = globalThis.fetch) {
     this.apiKey = env.HAUNTED_STUDIO_IMAGE_API_KEY ?? null;
-    this.baseUrl = env.HAUNTED_STUDIO_IMAGE_BASE_URL ?? null;
-    this.model = env.HAUNTED_STUDIO_IMAGE_MODEL ?? null;
+    this.baseUrl = (env.HAUNTED_STUDIO_IMAGE_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+    this.model = env.HAUNTED_STUDIO_IMAGE_MODEL ?? 'gpt-image-2';
+    this.size = env.HAUNTED_STUDIO_IMAGE_SIZE ?? '1024x1024';
+    this.fetchImpl = fetchImpl;
   }
 
   get mode() { return 'image'; }
+  get fileExtension() { return 'png'; }
 
-  async generateArtifact() {
+  redact(text) {
+    return this.apiKey ? String(text).replaceAll(this.apiKey, '[redacted]') : String(text);
+  }
+
+  async generateArtifact({ prompt, outputPath }) {
     if (!this.apiKey) {
       throw new Error('HAUNTED_STUDIO_IMAGE_API_KEY is required for image mode; run in mock mode to work without keys.');
     }
-    // The credential seam exists now; the real call is wired in a later slice.
-    throw new Error('Image-mode artifact generation is not yet implemented; use mock mode.');
+    let response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}/images/generations`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+        body: JSON.stringify({ model: this.model, prompt, size: this.size, output_format: 'png' })
+      });
+    } catch (error) {
+      throw new Error(this.redact(`Image provider request failed: ${error.message}`));
+    }
+    if (!response.ok) {
+      const body = this.redact((await response.text()).slice(0, 500));
+      throw new Error(`Image provider returned ${response.status}: ${body}`);
+    }
+    const result = await response.json();
+    const base64 = result?.data?.[0]?.b64_json;
+    if (!base64) throw new Error('Image provider response did not contain base64 image data.');
+    await ensureDir(path.dirname(outputPath));
+    await writeFile(outputPath, Buffer.from(base64, 'base64'));
+    return outputPath;
   }
 }
 
@@ -77,6 +109,7 @@ export class StudioArtistProvider extends DeterministicProvider {
   }
 
   get artifactMode() { return this.artifactAdapter.mode; }
+  get artifactExtension() { return this.artifactAdapter.fileExtension; }
 
   async generateArtifact(input) {
     return this.artifactAdapter.generateArtifact(input);
