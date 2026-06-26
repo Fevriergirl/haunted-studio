@@ -71,7 +71,10 @@ function isBlockedHost(hostname) {
       /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
   }
   if (host.includes(':')) {
-    return host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd');
+    // `::ffff:a.b.c.d` (IPv4-mapped IPv6) routes to the embedded IPv4 host, so it
+    // must be blocked too; the URL parser normalizes it to `::ffff:<hex:hex>`.
+    return host === '::1' || host === '::' || host.startsWith('::ffff:') ||
+      host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd');
   }
   return false;
 }

@@ -85,6 +85,28 @@ test('image mode refuses a private or loopback image url', async () => {
   await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /private or loopback/);
 });
 
+test('image mode blocks alternate-encoding private/loopback image urls', async () => {
+  const urls = [
+    'https://2130706433/x.png',         // integer form of 127.0.0.1
+    'https://0x7f000001/x.png',         // hex form of 127.0.0.1
+    'https://127.0.0.1./x.png',         // trailing dot
+    'https://[::ffff:127.0.0.1]/x.png', // IPv4-mapped IPv6 loopback
+    'https://[::ffff:10.0.0.5]/x.png'   // IPv4-mapped IPv6 private
+  ];
+  for (const url of urls) {
+    const fetchStub = async (requested) => {
+      if (requested.endsWith('/images/generations')) return { ok: true, json: async () => ({ data: [{ url }] }) };
+      throw new Error(`download must not be attempted: ${requested}`);
+    };
+    const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);
+    await assert.rejects(
+      provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }),
+      /private or loopback|non-https/,
+      `${url} should be blocked`
+    );
+  }
+});
+
 test('image mode caps a streamed download without buffering it whole', async () => {
   const fetchStub = async (url) => {
     if (url.endsWith('/images/generations')) return { ok: true, json: async () => ({ data: [{ url: 'https://cdn.example.com/huge.png' }] }) };
