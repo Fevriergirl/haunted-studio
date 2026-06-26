@@ -145,6 +145,10 @@ export class DeterministicProvider {
 
     return Array.from({ length: count }, (_, index) => {
       const strategy = strategies[index % strategies.length];
+      // The scoring seed depends only on stable content, never on the random
+      // cycle id, so the "deterministic" provider's scores and curation are
+      // reproducible across runs. The candidate id stays unique for the ledger.
+      const scoringSeed = `${observation.id}:${index}:${strategy.name}`;
       return {
         id: `candidate_${cycleId}_${index + 1}`,
         title: `${strategy.name}: ${observation.tags[index % observation.tags.length] ?? 'study'}`,
@@ -158,20 +162,18 @@ export class DeterministicProvider {
         planned_ambiguity: strategy.accident,
         medium: index === 1 ? 'staged photograph of an impossible room' : index === 2 ? 'large-format constructed photograph' : 'photoreal staged interior image',
         generation_prompt: `Create a materially convincing ${index === 1 ? 'staged photograph' : 'photoreal image'} based on this brief: ${strategy.structure} ${observation.text} Avoid ${intention.must_avoid.join(', ')}. Do not add text. Treat the impossible element as an ordinary physical fact.`,
-        // The seed must depend only on stable content, never on the random
-        // cycle id, or the "deterministic" provider's scores vary per run and
-        // curation occasionally rejects all candidates (a CI flake and a
-        // reproducibility hole). The candidate id stays unique for the ledger.
-        seed_signature: stableNumber(`${observation.id}:${index}:${strategy.name}`)
+        scoring_seed: scoringSeed,
+        seed_signature: stableNumber(scoringSeed)
       };
     });
   }
 
   async critiqueCandidate({ candidate, intention, state, constitution }) {
-    // Scores key off the stable seed signature, not the random candidate id, so
-    // the deterministic provider is actually deterministic across runs.
+    // Scores key off the explicit stable scoring seed, not the random candidate
+    // id, so the deterministic provider is actually deterministic across runs.
+    // Fall back to the numeric signature for any candidate without the seed.
     const signature = candidate.seed_signature;
-    const scoringKey = `${signature}`;
+    const scoringKey = candidate.scoring_seed ?? `${signature}`;
     const historicalRepeat = Object.keys(state.motifs ?? {}).filter((motif) => candidate.artifact_brief.includes(motif)).length;
     const scores = {
       formal: roundScore(0.58 + signature * 0.3),
@@ -231,7 +233,8 @@ export class DeterministicProvider {
       generation_prompt: `${candidate.generation_prompt} REVISION REQUIREMENT: ${critique.revision} Preserve material plausibility and the understated impossible fact.`,
       parent_candidate_id: candidate.id,
       revision_reason: critique.strongest_objection,
-      seed_signature: stableNumber(`${candidate.seed_signature}:revision`)
+      scoring_seed: `${candidate.scoring_seed ?? candidate.seed_signature}:revision`,
+      seed_signature: stableNumber(`${candidate.scoring_seed ?? candidate.seed_signature}:revision`)
     };
   }
 
