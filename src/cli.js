@@ -4,6 +4,7 @@ import { loadProjectConfig } from './config.js';
 import { Studio } from './core/studio.js';
 import { createProvider } from './providers/index.js';
 import { runCreativeCycle } from './engine/creative-cycle.js';
+import { runFidelityAdjudication } from './engine/fidelity-cycle.js';
 import { recordHumanReview } from './engine/human-review.js';
 import { writeTrajectoryReport } from './engine/report.js';
 import { forkStudio } from './engine/fork.js';
@@ -109,6 +110,16 @@ async function main() {
       result.verification = await studio.ledger.verify();
     }
     printCycle(result);
+    // Make fidelity adjudication real: independently audit the finished work.
+    // Inert when there is no blind witness (conceptual cycles) or the provider
+    // cannot adjudicate; bites only when concealment is confirmed.
+    if (provider.supportsFidelityAdjudication === true) {
+      const fidelity = await runFidelityAdjudication({ studio, cycleId: result.cycleId, provider });
+      if (fidelity.status === 'available') {
+        console.log(`Fidelity: ${fidelity.adjudication.status}` +
+          (fidelity.canon_revoked ? ' — canon REVOKED (confirmed concealed deviation)' : ''));
+      }
+    }
     return;
   }
 

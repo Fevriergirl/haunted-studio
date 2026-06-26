@@ -39,6 +39,10 @@ export function fidelityAdjudicatedEvent(verdict, cycleId) {
   return { type: 'fidelity_adjudicated', actor: 'role:fidelity-adversarial-reviewer', cycleId, payload: verdict };
 }
 
+export function fidelityCanonRevokedEvent(payload, cycleId) {
+  return { type: 'canon_revoked_by_fidelity', actor: 'role:fidelity-adjudicator', cycleId, payload };
+}
+
 // Reconstruct the flat record list (for deriveAdjudication) from a cycle's
 // persisted fidelity events, preserving append order.
 export function fidelityRecordsFromEvents(events, cycleId) {

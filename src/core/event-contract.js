@@ -14,7 +14,8 @@ export const POST_CYCLE_EVENT_TYPES = new Set([
   'fidelity_maker_reported',
   'fidelity_signals_detected',
   'fidelity_violation_alleged',
-  'fidelity_adjudicated'
+  'fidelity_adjudicated',
+  'canon_revoked_by_fidelity'
 ]);
 
 const FIDELITY_EVENT_TYPES = new Set([
@@ -308,6 +309,7 @@ function validateEnvelope({ type, actor, cycleId, payload, schemaVersion }) {
   const requiresCycle = CYCLE_EVENT_TYPES.has(type) ||
     type === 'human_review_recorded' ||
     type === 'mailbox_observations_consumed' ||
+    type === 'canon_revoked_by_fidelity' ||
     FIDELITY_EVENT_TYPES.has(type);
   if (requiresCycle && !hasCycleIdentity(cycleId)) {
     throw new Error(`Ledger event ${type} requires a non-empty cycle identity.`);
@@ -495,11 +497,33 @@ function validateFidelityEvent({ type, cycleId, payload }, events) {
   }
 }
 
+// A canon revocation must cite real confirmed concealed-deviation verdicts in
+// the same cycle, so canon can only lose teeth-bearing works for cause.
+function validateCanonRevocation({ cycleId, payload }, events) {
+  if (typeof payload.reason !== 'string' || !payload.reason.trim()) {
+    throw new Error('canon_revoked_by_fidelity requires a reason.');
+  }
+  if (!Array.isArray(payload.verdict_ids) || payload.verdict_ids.length === 0) {
+    throw new Error('canon_revoked_by_fidelity must cite at least one confirmed concealed verdict.');
+  }
+  if (events.some((event) => event.type === 'canon_revoked_by_fidelity' && event.cycle_id === cycleId)) {
+    throw new Error(`Cycle ${cycleId} canon is already revoked.`);
+  }
+  const concealedConfirmed = new Set(events
+    .filter((event) => event.type === 'fidelity_adjudicated' && event.cycle_id === cycleId &&
+      event.payload.verdict === 'confirmed' && event.payload.disclosure_status === 'undisclosed')
+    .map((event) => event.payload.record_id));
+  if (payload.verdict_ids.some((id) => !concealedConfirmed.has(id))) {
+    throw new Error('canon_revoked_by_fidelity cites a verdict that is not a confirmed concealed deviation.');
+  }
+}
+
 export function validateEventBeforeAppend(event, existingEvents, options = {}) {
   validateEnvelope(event);
   if (POST_CYCLE_EVENT_TYPES.has(event.type)) {
     validatePostCycleTransition(event, existingEvents);
     if (FIDELITY_EVENT_TYPES.has(event.type)) validateFidelityEvent(event, existingEvents);
+    if (event.type === 'canon_revoked_by_fidelity') validateCanonRevocation(event, existingEvents);
     return;
   }
   if (CYCLE_EVENT_TYPES.has(event.type)) {
