@@ -12,6 +12,19 @@ async function outPath(name) {
   return path.join(dir, name);
 }
 
+function streamFrom(buffer) {
+  return new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(buffer)); controller.close(); } });
+}
+
+function chunkedStream(totalBytes, chunk = 4) {
+  let sent = 0;
+  return new ReadableStream({ pull(controller) {
+    if (sent >= totalBytes) { controller.close(); return; }
+    const n = Math.min(chunk, totalBytes - sent); sent += n;
+    controller.enqueue(new Uint8Array(n));
+  } });
+}
+
 test('adapters report their file extensions and modes', () => {
   assert.equal(new MockArtifactProvider().fileExtension, 'svg');
   assert.equal(createArtifactProvider('mock').mode, 'mock');
@@ -46,12 +59,13 @@ test('image mode decodes and writes the returned image bytes', async () => {
 
 test('image mode follows a returned https url when there is no base64', async () => {
   const imageBytes = Buffer.from('downloaded-png-bytes');
-  const fetchStub = async (url) => {
+  const fetchStub = async (url, options) => {
     if (url.endsWith('/images/generations')) {
       return { ok: true, json: async () => ({ data: [{ url: 'https://cdn.example.com/generated.png' }] }) };
     }
     assert.equal(url, 'https://cdn.example.com/generated.png');
-    return { ok: true, headers: { get: () => String(imageBytes.length) }, arrayBuffer: async () => imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.length) };
+    assert.equal(options.redirect, 'error', 'download must not follow redirects');
+    return { ok: true, headers: { get: () => String(imageBytes.length) }, body: streamFrom(imageBytes) };
   };
   const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);
   const file = await outPath('artifact.png');
@@ -65,13 +79,52 @@ test('image mode refuses a non-https image url', async () => {
   await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /non-https/);
 });
 
-test('image mode enforces a download size cap', async () => {
+test('image mode refuses a private or loopback image url', async () => {
+  const fetchStub = async () => ({ ok: true, json: async () => ({ data: [{ url: 'https://169.254.169.254/latest/meta-data/' }] }) });
+  const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);
+  await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /private or loopback/);
+});
+
+test('image mode caps a streamed download without buffering it whole', async () => {
   const fetchStub = async (url) => {
     if (url.endsWith('/images/generations')) return { ok: true, json: async () => ({ data: [{ url: 'https://cdn.example.com/huge.png' }] }) };
-    return { ok: true, headers: { get: () => String(64 * 1024 * 1024) }, arrayBuffer: async () => new ArrayBuffer(0) };
+    // No content-length, and the stream exceeds the (tiny) cap.
+    return { ok: true, headers: { get: () => null }, body: chunkedStream(64) };
+  };
+  const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY, HAUNTED_STUDIO_IMAGE_MAX_BYTES: '16' }, fetchStub);
+  await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /size cap/);
+});
+
+test('image mode refuses to send the API key to a non-https base URL', async () => {
+  let called = false;
+  const fetchStub = async () => { called = true; return { ok: true, json: async () => ({}) }; };
+  const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY, HAUNTED_STUDIO_IMAGE_BASE_URL: 'http://evil.example.com/v1' }, fetchStub);
+  await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /must use https/);
+  assert.equal(called, false, 'the key must never be sent over http');
+});
+
+test('a non-gpt-image model omits the gpt-image-only output_format parameter', async () => {
+  let sentBody;
+  const fetchStub = async (url, options) => {
+    sentBody = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ data: [{ b64_json: Buffer.from('x').toString('base64') }] }) };
+  };
+  const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY, HAUNTED_STUDIO_IMAGE_MODEL: 'dall-e-3' }, fetchStub);
+  await provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') });
+  assert.ok(!('output_format' in sentBody), 'dall-e must not receive output_format');
+});
+
+test('a failed image download does not leak the signed url or token', async () => {
+  const signed = 'https://cdn.example.com/x.png?sig=SUPERSECRETTOKEN';
+  const fetchStub = async (url) => {
+    if (url.endsWith('/images/generations')) return { ok: true, json: async () => ({ data: [{ url: signed }] }) };
+    throw new Error(`fetch failed for ${signed}`);
   };
   const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);
-  await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /size cap/);
+  await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), (error) => {
+    assert.ok(!error.message.includes('SUPERSECRETTOKEN'), 'must not leak the signed url');
+    return true;
+  });
 });
 
 test('an error response never leaks the API key', async () => {

@@ -50,6 +50,53 @@ export class MockArtifactProvider {
 const IMAGE_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
+// The credentialed request must never go anywhere but https (loopback http is
+// allowed for local development), so the API key is never sent in cleartext.
+function assertSafeRequestUrl(rawUrl) {
+  let url;
+  try { url = new URL(rawUrl); } catch { throw new Error('HAUNTED_STUDIO_IMAGE_BASE_URL is not a valid URL.'); }
+  const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new Error(`HAUNTED_STUDIO_IMAGE_BASE_URL must use https (got ${url.protocol}//${url.hostname}); refusing to send the API key in cleartext.`);
+  }
+}
+
+// Best-effort block of IP-literal private/loopback/link-local download targets.
+// (Domain names that resolve to private IPs are not caught — documented.)
+function isBlockedHost(hostname) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    return /^(127|10|0)\./.test(host) || /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  }
+  if (host.includes(':')) {
+    return host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd');
+  }
+  return false;
+}
+
+// Read a response body with a hard cap that bounds memory: it aborts as soon as
+// the cumulative size exceeds the cap, never buffering an unbounded stream.
+async function readCapped(response, cap) {
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > cap) throw new Error('Image download exceeds the size cap.');
+    return buffer;
+  }
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) { await reader.cancel(); throw new Error('Image download exceeds the size cap.'); }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
 // Calls an OpenAI-images-compatible endpoint. Credentials come only from the
 // environment and are never logged, embedded in metadata, or returned in an
 // error — every outward message is redacted.
@@ -59,6 +106,7 @@ export class ImageArtifactProvider {
     this.baseUrl = (env.HAUNTED_STUDIO_IMAGE_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
     this.model = env.HAUNTED_STUDIO_IMAGE_MODEL ?? 'gpt-image-2';
     this.size = env.HAUNTED_STUDIO_IMAGE_SIZE ?? '1024x1024';
+    this.maxBytes = Number(env.HAUNTED_STUDIO_IMAGE_MAX_BYTES) || MAX_IMAGE_BYTES;
     this.fetchImpl = fetchImpl;
   }
 
@@ -73,13 +121,19 @@ export class ImageArtifactProvider {
     if (!this.apiKey) {
       throw new Error('HAUNTED_STUDIO_IMAGE_API_KEY is required for image mode; run in mock mode to work without keys.');
     }
+    assertSafeRequestUrl(this.baseUrl);
+    // `output_format` is a gpt-image parameter; dall-e-style models reject it, so
+    // only send it when the model is a gpt-image one. Other models default to a
+    // url response, which the download path below handles.
+    const body = { model: this.model, prompt, size: this.size };
+    if (/gpt-image/i.test(this.model)) body.output_format = 'png';
     let response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}/images/generations`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
-        body: JSON.stringify({ model: this.model, prompt, size: this.size, output_format: 'png' })
+        body: JSON.stringify(body)
       });
     } catch (error) {
       throw new Error(this.redact(`Image provider request failed: ${error.message}`));
@@ -106,21 +160,23 @@ export class ImageArtifactProvider {
   }
 
   async downloadImage(rawUrl) {
-    let parsed;
-    try { parsed = new URL(rawUrl); } catch { throw new Error('Image provider returned an invalid image URL.'); }
-    if (parsed.protocol !== 'https:') throw new Error(`Image provider returned a non-https image URL (${parsed.protocol}).`);
+    let url;
+    try { url = new URL(rawUrl); } catch { throw new Error('Image provider returned an invalid image URL.'); }
+    if (url.protocol !== 'https:') throw new Error(`Image provider returned a non-https image URL (${url.protocol}).`);
+    if (isBlockedHost(url.hostname)) throw new Error('Image provider returned a private or loopback image URL.');
     let response;
     try {
-      response = await this.fetchImpl(rawUrl, { signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS) });
-    } catch (error) {
-      throw new Error(this.redact(`Image download failed: ${error.message}`));
+      // `redirect: 'error'` prevents a benign https URL from redirecting the fetch
+      // to an internal host (the protocol/host checks above only see the first URL).
+      response = await this.fetchImpl(rawUrl, { redirect: 'error', signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS) });
+    } catch {
+      // No url or error detail in the message: a signed download URL must not leak.
+      throw new Error('Image download failed (network error or disallowed redirect).');
     }
     if (!response.ok) throw new Error(`Image download returned ${response.status}.`);
     const declared = Number(response.headers?.get?.('content-length'));
-    if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) throw new Error('Image download exceeds the size cap.');
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > MAX_IMAGE_BYTES) throw new Error('Image download exceeds the size cap.');
-    return buffer;
+    if (Number.isFinite(declared) && declared > this.maxBytes) throw new Error('Image download exceeds the size cap.');
+    return readCapped(response, this.maxBytes);
   }
 }
 
