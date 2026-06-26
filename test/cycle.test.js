@@ -29,6 +29,21 @@ test('one creative cycle locks intention before candidate generation', async () 
   assert.equal(result.artifactPath, null);
 });
 
+test('deterministic provider scoring is independent of the random cycle id', async () => {
+  const provider = new DeterministicProvider();
+  const observation = observations[0];
+  const intention = await provider.lockIntention({ observation, necessity: {}, state: { cycle_count: 0 } });
+  const generate = (cycleId) => provider.generateCandidates({ observation, intention, count: 3, cycleId, state: {} });
+  const critiqueAll = (candidates) => Promise.all(candidates.map((candidate) =>
+    provider.critiqueCandidate({ candidate, intention, state: {}, constitution })));
+
+  const scoresA = (await critiqueAll(await generate('cycle_AAAAAAAA'))).map((critique) => critique.scores);
+  const scoresB = (await critiqueAll(await generate('cycle_ZZZZZZZZ'))).map((critique) => critique.scores);
+  // Different (random) cycle ids must not change the scores; otherwise curation
+  // is nondeterministic and intermittently rejects all candidates.
+  assert.deepEqual(scoresA, scoresB);
+});
+
 test('later cycles inherit motifs and unresolved tensions', async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'haunted-cycle-'));
   const studio = new Studio({ rootDir, constitution, experiment });
