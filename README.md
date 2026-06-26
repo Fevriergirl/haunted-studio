@@ -197,6 +197,8 @@ npm run studio
 
 The key is read only from the environment, never written to metadata or logs, and
 redacted from any error message. Mock mode remains the default and needs no key.
+See [docs/IMAGE-MODE-TESTING.md](docs/IMAGE-MODE-TESTING.md) for exactly what has
+been verified live versus what still needs a real provider key.
 
 The interface has no authentication and is intended for local use only. It binds
 to `127.0.0.1` and rejects non-loopback `Host` headers; **do not** set
