@@ -44,6 +44,36 @@ test('image mode decodes and writes the returned image bytes', async () => {
   assert.deepEqual(await readFile(file), pngBytes);
 });
 
+test('image mode follows a returned https url when there is no base64', async () => {
+  const imageBytes = Buffer.from('downloaded-png-bytes');
+  const fetchStub = async (url) => {
+    if (url.endsWith('/images/generations')) {
+      return { ok: true, json: async () => ({ data: [{ url: 'https://cdn.example.com/generated.png' }] }) };
+    }
+    assert.equal(url, 'https://cdn.example.com/generated.png');
+    return { ok: true, headers: { get: () => String(imageBytes.length) }, arrayBuffer: async () => imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.length) };
+  };
+  const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);
+  const file = await outPath('artifact.png');
+  await provider.generateArtifact({ prompt: 'a quiet room', outputPath: file });
+  assert.deepEqual(await readFile(file), imageBytes);
+});
+
+test('image mode refuses a non-https image url', async () => {
+  const fetchStub = async () => ({ ok: true, json: async () => ({ data: [{ url: 'http://insecure.example.com/x.png' }] }) });
+  const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);
+  await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /non-https/);
+});
+
+test('image mode enforces a download size cap', async () => {
+  const fetchStub = async (url) => {
+    if (url.endsWith('/images/generations')) return { ok: true, json: async () => ({ data: [{ url: 'https://cdn.example.com/huge.png' }] }) };
+    return { ok: true, headers: { get: () => String(64 * 1024 * 1024) }, arrayBuffer: async () => new ArrayBuffer(0) };
+  };
+  const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);
+  await assert.rejects(provider.generateArtifact({ prompt: 'x', outputPath: await outPath('a.png') }), /size cap/);
+});
+
 test('an error response never leaks the API key', async () => {
   const fetchStub = async () => ({ ok: false, status: 401, text: async () => `Unauthorized: key ${KEY} is invalid` });
   const provider = new ImageArtifactProvider({ HAUNTED_STUDIO_IMAGE_API_KEY: KEY }, fetchStub);

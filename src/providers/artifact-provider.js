@@ -48,6 +48,7 @@ export class MockArtifactProvider {
 }
 
 const IMAGE_REQUEST_TIMEOUT_MS = 120_000;
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
 // Calls an OpenAI-images-compatible endpoint. Credentials come only from the
 // environment and are never logged, embedded in metadata, or returned in an
@@ -88,11 +89,38 @@ export class ImageArtifactProvider {
       throw new Error(`Image provider returned ${response.status}: ${body}`);
     }
     const result = await response.json();
-    const base64 = result?.data?.[0]?.b64_json;
-    if (!base64) throw new Error('Image provider response did not contain base64 image data.');
+    const datum = result?.data?.[0] ?? {};
+    let bytes;
+    if (typeof datum.b64_json === 'string') {
+      bytes = Buffer.from(datum.b64_json, 'base64');
+    } else if (typeof datum.url === 'string') {
+      // Some endpoints (e.g. dall-e, several compatible providers) return a URL
+      // instead of base64. Follow it, but only over https and within a size cap.
+      bytes = await this.downloadImage(datum.url);
+    } else {
+      throw new Error('Image provider response did not contain image data (no b64_json or url).');
+    }
     await ensureDir(path.dirname(outputPath));
-    await writeFile(outputPath, Buffer.from(base64, 'base64'));
+    await writeFile(outputPath, bytes);
     return outputPath;
+  }
+
+  async downloadImage(rawUrl) {
+    let parsed;
+    try { parsed = new URL(rawUrl); } catch { throw new Error('Image provider returned an invalid image URL.'); }
+    if (parsed.protocol !== 'https:') throw new Error(`Image provider returned a non-https image URL (${parsed.protocol}).`);
+    let response;
+    try {
+      response = await this.fetchImpl(rawUrl, { signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS) });
+    } catch (error) {
+      throw new Error(this.redact(`Image download failed: ${error.message}`));
+    }
+    if (!response.ok) throw new Error(`Image download returned ${response.status}.`);
+    const declared = Number(response.headers?.get?.('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) throw new Error('Image download exceeds the size cap.');
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > MAX_IMAGE_BYTES) throw new Error('Image download exceeds the size cap.');
+    return buffer;
   }
 }
 

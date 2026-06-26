@@ -3,10 +3,11 @@
 ## Unreleased
 
 - Wire the real image provider behind the artifact-adapter seam: image mode now
-  calls an OpenAI-images-compatible endpoint and saves a PNG, with credentials
-  read only from the environment and redacted from every error message. Mock
-  remains the default; the artifact file extension and served content type follow
-  the active provider.
+  calls an OpenAI-images-compatible endpoint and saves a PNG, accepting either a
+  base64 (`b64_json`) or a `url` response (the url is followed over https only and
+  within a size cap). Credentials are read only from the environment and redacted
+  from every error message. Mock remains the default; the artifact file extension
+  and served content type follow the active provider.
 - Add a thin, zero-dependency local studio interface that runs one complete
   artist cycle and shows the result: enter a seed, see the brief, prompt,
   generated artifact, and reflection, then accept/reject/unresolved and watch
