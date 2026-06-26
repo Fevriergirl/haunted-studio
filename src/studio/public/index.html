@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Haunted Studio</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-monospace, Menlo, Consolas, monospace; background: #0e0e12; color: #e7e7ea; }
+    header { padding: 14px 22px; border-bottom: 1px solid #26262e; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 16px; margin: 0; letter-spacing: 0.5px; }
+    #mode-banner { margin-left: auto; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .mode-mock { background: #1d3a26; color: #7ee2a8; border: 1px solid #2e6b45; }
+    .mode-image { background: #3a1d2a; color: #f0a6c4; border: 1px solid #6b2e4f; }
+    main { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    .panel { background: #15151b; border: 1px solid #26262e; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #9a9aa6; margin: 0 0 10px; }
+    textarea { width: 100%; min-height: 64px; background: #0e0e12; color: #e7e7ea; border: 1px solid #2c2c36; border-radius: 8px; padding: 10px; font: inherit; resize: vertical; }
+    button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid #34343f; background: #20202a; color: #e7e7ea; padding: 9px 14px; }
+    button:hover { background: #2a2a36; }
+    button.primary { background: #3b4ee0; border-color: #4a5cf0; font-weight: 700; }
+    button.accept { background: #1d3a26; border-color: #2e6b45; }
+    button.reject { background: #3a1d22; border-color: #6b2e36; }
+    button.unresolved { background: #34301d; border-color: #6b602e; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    pre, .text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.5; color: #cfcfd6; margin: 0; }
+    .muted { color: #7a7a86; }
+    img.artifact { width: 100%; border-radius: 8px; border: 1px solid #2c2c36; display: block; background: #000; }
+    .step { opacity: 0.35; transition: opacity 0.2s; }
+    .step.active { opacity: 1; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #34343f; margin: 2px 4px 2px 0; }
+    .canon-item { padding: 8px; border: 1px solid #26262e; border-radius: 8px; margin-bottom: 6px; }
+    .revoked { text-decoration: line-through; color: #b06a78; }
+    #error { color: #ff8a8a; min-height: 18px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>HAUNTED STUDIO</h1>
+    <span class="muted">artist cycle</span>
+    <span id="mode-banner" class="mode-mock">MOCK MODE</span>
+  </header>
+  <main>
+    <section>
+      <div class="panel">
+        <h2>1 · Seed idea</h2>
+        <textarea id="seed" placeholder="e.g. a kitchen that quietly refuses to be entered"></textarea>
+        <div class="row">
+          <button id="begin" class="primary">Begin Cycle</button>
+          <span id="error"></span>
+        </div>
+      </div>
+
+      <div class="panel step" id="step-brief"><h2>2 · Artist brief</h2><p class="text muted">Run a cycle to see the brief.</p></div>
+      <div class="panel step" id="step-prompt"><h2>3 · Image prompt</h2><p class="text muted"></p></div>
+      <div class="panel step" id="step-artifact"><h2>4–6 · Artifact (saved in project)</h2><p class="text muted"></p></div>
+      <div class="panel step" id="step-reflection"><h2>7 · Artist reflection</h2><p class="text muted"></p></div>
+      <div class="panel step" id="step-decision">
+        <h2>8 · Your decision</h2>
+        <p class="text muted">Accept, reject, or mark the artifact unresolved.</p>
+        <div class="row">
+          <button class="accept" data-decision="accept" disabled>Accept</button>
+          <button class="reject" data-decision="reject" disabled>Reject</button>
+          <button class="unresolved" data-decision="unresolved" disabled>Unresolved</button>
+        </div>
+        <p class="text" id="decision-result"></p>
+      </div>
+    </section>
+
+    <section>
+      <div class="panel">
+        <h2>9 · Canon / memory / trajectory</h2>
+        <div id="state"><p class="text muted">No cycles yet.</p></div>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

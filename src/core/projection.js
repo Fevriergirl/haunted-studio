@@ -98,6 +98,23 @@ function applyCanonRevocation(state, event) {
   };
 }
 
+// The studio operator's verdict on a finished work. Recorded on the canon entry;
+// a reject withdraws canon standing (marked, never erased, like fidelity), while
+// accept/unresolved annotate without touching canon membership.
+function applyArtifactDecision(state, event) {
+  const work = state.canon.find((entry) => entry.cycle_id === event.cycle_id);
+  if (!work) return;
+  work.human_decision = event.payload.decision;
+  if (event.payload.decision === 'reject' && !work.revoked) {
+    work.revoked = true;
+    work.revocation = {
+      reason: event.payload.note?.trim() || 'Rejected by the studio operator.',
+      verdict_ids: [],
+      revoked_by: 'human'
+    };
+  }
+}
+
 function canonicalKey(value) {
   return JSON.stringify(value, Object.keys(value).sort());
 }
@@ -139,6 +156,8 @@ export function projectLedger(events) {
       state.corrections.push({ correction_event_id: event.event_id, ...event.payload });
     } else if (event.type === 'canon_revoked_by_fidelity') {
       applyCanonRevocation(state, event);
+    } else if (event.type === 'artifact_decision_recorded') {
+      applyArtifactDecision(state, event);
     } else if (event.type === 'studio_forked') {
       state.branch = event.payload;
     }

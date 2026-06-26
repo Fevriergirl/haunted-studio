@@ -5,6 +5,8 @@ import { Studio } from './core/studio.js';
 import { createProvider } from './providers/index.js';
 import { runCreativeCycle } from './engine/creative-cycle.js';
 import { runFidelityAdjudication } from './engine/fidelity-cycle.js';
+import { beginStudioCycle } from './engine/studio-cycle.js';
+import { startStudioServer } from './studio/server.js';
 import { recordHumanReview } from './engine/human-review.js';
 import { writeTrajectoryReport } from './engine/report.js';
 import { forkStudio } from './engine/fork.js';
@@ -70,6 +72,30 @@ async function main() {
   const parsed = parseArguments(process.argv);
   const config = await loadProjectConfig();
   const studio = new Studio({ rootDir: config.studioRoot, constitution: config.constitution, experiment: config.experiment });
+
+  if (parsed.command === 'run' && parsed.values.seed) {
+    // One-shot studio art cycle from a seed idea (mock artifact by default).
+    await studio.initialize();
+    const mode = process.env.HAUNTED_STUDIO_ARTIFACT === 'image' ? 'image' : 'mock';
+    const summary = await beginStudioCycle({
+      studio, seed: parsed.values.seed, mode, operationId: parsed.values['operation-id'] ?? null
+    });
+    console.log(`\nSeed: ${summary.seed}`);
+    console.log(`Mode: ${summary.mode.toUpperCase()} ${mode === 'mock' ? '(no API keys needed)' : ''}`);
+    console.log(`Cycle: ${summary.cycle_id}`);
+    console.log(`Curator decision: ${summary.curator_decision}`);
+    if (summary.artifact_url) {
+      console.log(`Artist brief: ${summary.artist_brief}`);
+      console.log(`Image prompt: ${summary.generated_prompt}`);
+      console.log(`Artifact saved: ${summary.metadata.artifact_path}`);
+      console.log(`Metadata: artifacts/cycles/${summary.cycle_id}/metadata.json`);
+    } else {
+      console.log(`Refusal: ${summary.rationale}`);
+    }
+    const activeCanon = summary.state.canon.filter((work) => !work.revoked).length;
+    console.log(`State: ${summary.state.cycle_count} cycle(s), ${activeCanon} active canon work(s)`);
+    return;
+  }
 
   if (parsed.command === 'run') {
     const provider = createProvider();
@@ -252,6 +278,16 @@ async function main() {
     const host = process.env.HAUNTED_STUDIO_HOST ?? '127.0.0.1';
     startMailboxServer({ mailbox, ledger: studio.ledger, port, host });
     console.log(`Haunted Studio observation mailbox listening on http://${host}:${port}`);
+    return;
+  }
+
+  if (parsed.command === 'studio') {
+    await studio.initialize();
+    const mode = process.env.HAUNTED_STUDIO_ARTIFACT === 'image' ? 'image' : 'mock';
+    const port = Number(process.env.HAUNTED_STUDIO_PORT ?? 19830);
+    const host = process.env.HAUNTED_STUDIO_HOST ?? '127.0.0.1';
+    startStudioServer({ studio, mode, port, host });
+    console.log(`Haunted Studio interface on http://${host}:${port}/studio  (${mode.toUpperCase()} MODE)`);
     return;
   }
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add a thin, zero-dependency local studio interface that runs one complete
+  artist cycle and shows the result: enter a seed, see the brief, prompt,
+  generated artifact, and reflection, then accept/reject/unresolved and watch
+  canon/memory update. Includes a `mock` artifact provider (default, offline) and
+  an `image` adapter seam reading credentials from the environment, a stdlib HTTP
+  server (`npm run studio`), a `run --seed` one-shot, and artifact + metadata
+  saved under `artifacts/cycles/<cycleId>/`. The human reject reuses the
+  marked-not-erased canon revocation.
 - Give fidelity adjudication teeth: after a cycle, an independent confirmed
   concealed deviation revokes the work's canon standing. Revocation is post-hoc
   and marks the canon entry (`revoked: true` + reason/verdict provenance) — the

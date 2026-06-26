@@ -163,6 +163,31 @@ npm run verify
 npm run report
 ```
 
+## Studio interface (watch it make art)
+
+A thin, zero-dependency local interface for running one complete artist cycle and
+seeing the result. Defaults to a **mock** artifact provider, so it works without
+any API keys.
+
+```bash
+npm run studio        # open http://127.0.0.1:19830/studio
+```
+
+Enter a seed idea, click **Begin Cycle**, and the screen reveals the artist
+brief, the image prompt, the generated (mock) artifact, and a short reflection;
+then you accept, reject, or mark it unresolved and watch canon/memory update. A
+banner shows whether you are in **MOCK** or **IMAGE** mode. Run one cycle from the
+CLI instead:
+
+```bash
+node src/cli.js run --seed "a kitchen that quietly refuses to be entered"
+```
+
+Artifacts and a metadata sidecar are saved under
+`<studio>/artifacts/cycles/<cycleId>/`. Set `HAUNTED_STUDIO_ARTIFACT=image`
+(with `HAUNTED_STUDIO_IMAGE_API_KEY`) to switch to real image mode once that
+provider is wired.
+
 ## Optional live-model configuration
 
 A ChatGPT subscription does not include API usage. API access and billing are
@@ -212,6 +237,8 @@ Official API guides:
 | `npm run experiment -- 5 experiments/run-001` | Run all six ablation conditions |
 | `npm run experiment:smoke` | Run one deterministic cycle per condition |
 | `npm run serve` | Start the loopback observation mailbox |
+| `npm run studio` | Start the local studio art-loop interface (mock by default) |
+| `node src/cli.js run --seed "<idea>"` | Run one studio art cycle from the CLI |
 | `npm run reset` | Archive the current studio directory before starting over |
 | `npm run check` | Syntax-check JavaScript and validate project JSON/metadata |
 | `npm test` | Run isolated offline tests |
