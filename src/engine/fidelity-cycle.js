@@ -17,6 +17,7 @@
 import { operationScopePath, serializeOperation } from '../core/operations.js';
 import {
   adjudicate,
+  canonEligibility,
   deriveAdjudication,
   detectSignals,
   freezeIntention,
@@ -25,6 +26,7 @@ import {
 } from './fidelity-adjudication.js';
 import {
   fidelityAdjudicatedEvent,
+  fidelityCanonRevokedEvent,
   fidelityIntentionFrozenEvent,
   fidelityMakerReportedEvent,
   fidelityRecordsFromEvents,
@@ -156,11 +158,37 @@ async function runFidelityAdjudicationUnlocked({ studio, cycleId, provider, role
     await append(fidelityAdjudicatedEvent(verdict, cycleId));
   }
 
+  const adjudication = deriveAdjudication(fidelityRecordsFromEvents(events, cycleId));
+
+  // Teeth: a confirmed concealed deviation revokes canon eligibility. Only
+  // confirmed concealment bites — undetectable/unresolved verdicts and disclosed
+  // transgression leave the audit's canon decision intact. Revocation is purely
+  // a function of confirmed_concealed; the audit score only colours the reason.
+  const manifest = events.find((event) => event.type === 'cycle_completed' && event.cycle_id === cycleId)?.payload;
+  const alreadyRevoked = events.some((event) => event.type === 'canon_revoked_by_fidelity' && event.cycle_id === cycleId);
+  let canonRevoked = alreadyRevoked;
+  if (manifest?.selected_candidate && !alreadyRevoked && adjudication.confirmed_concealed.length > 0) {
+    const eligibility = canonEligibility({
+      auditScore: manifest.artifact_audit?.overall_score,
+      threshold: studio.experiment.artifact_audit_threshold,
+      fidelityVerdicts: adjudication.verdicts
+    });
+    await append(fidelityCanonRevokedEvent({
+      cycle_id: cycleId,
+      candidate_id: manifest.selected_candidate.id,
+      reason: 'A required commitment was unmet and the maker did not disclose it; adversarial review confirmed the concealed deviation.',
+      eligibility_status: eligibility.status,
+      verdict_ids: adjudication.confirmed_concealed
+    }, cycleId));
+    canonRevoked = true;
+  }
+
   if (appended) await studio.projectAndSave('fidelity_adjudicated');
   return {
     cycleId,
     status: 'available',
     role_isolated: reviewerIndependent,
-    adjudication: deriveAdjudication(fidelityRecordsFromEvents(events, cycleId))
+    canon_revoked: canonRevoked,
+    adjudication
   };
 }

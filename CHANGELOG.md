@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Give fidelity adjudication teeth: after a cycle, an independent confirmed
+  concealed deviation revokes the work's canon standing. Revocation is post-hoc
+  and marks the canon entry (`revoked: true` + reason/verdict provenance) — the
+  record is never erased. Offline/no-witness/no-provider cases never revoke, and
+  reruns are idempotent. Wired into the CLI `run` flow and surfaced in the report.
 - Fix the deterministic provider's scoring to depend only on stable content
   (observation, candidate index, strategy) instead of the random cycle id, so it
   is actually deterministic. Previously ~0.5% of runs scored every candidate

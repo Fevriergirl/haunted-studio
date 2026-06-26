@@ -48,7 +48,12 @@ export async function buildTrajectoryReport({ studio }) {
     return_desire: round(average(reviews.map((review) => review.ratings?.return_desire)))
   };
 
-  const canonStatuses = (state.canon ?? []).reduce((counts, item) => {
+  // Revoked works stay in the canon record (never erased) but are marked; active
+  // canon excludes them.
+  const canonWorks = state.canon ?? [];
+  const activeCanon = canonWorks.filter((work) => !work.revoked);
+  const revokedCanon = canonWorks.filter((work) => work.revoked);
+  const canonStatuses = activeCanon.reduce((counts, item) => {
     const status = item.canon_status ?? 'legacy_unspecified';
     counts[status] = (counts[status] ?? 0) + 1;
     return counts;
@@ -71,7 +76,7 @@ export async function buildTrajectoryReport({ studio }) {
       most_selected: Object.entries(observationCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
     },
     trajectory: {
-      canon_size: state.canon?.length ?? 0,
+      canon_size: activeCanon.length,
       canon_statuses: canonStatuses,
       artifact_audit_passed_count: canonStatuses.artifact_audit_passed ?? 0,
       conceptual_only_count: canonStatuses.conceptual_only ?? 0,
@@ -81,6 +86,7 @@ export async function buildTrajectoryReport({ studio }) {
       normalized_motif_entropy: round(entropy(motifCounts)),
       unresolved_tension_count: state.unresolved_tensions?.length ?? 0,
       active_surprise_count: state.active_surprises?.length ?? 0,
+      fidelity_revoked_count: revokedCanon.length,
       correction_count: corrections.length,
       repetition_risk: recurringMotifs.length > 0 && recurringMotifs.length / Math.max(1, Object.keys(motifCounts).length) > 0.7
         ? 'high'
@@ -91,7 +97,8 @@ export async function buildTrajectoryReport({ studio }) {
       average_ratings: ratings,
       prediction_findings: state.audience_findings ?? []
     },
-    canon: state.canon ?? [],
+    canon: activeCanon,
+    revoked: revokedCanon,
     unresolved_tensions: state.unresolved_tensions ?? [],
     active_surprises: state.active_surprises ?? []
   };
@@ -109,6 +116,9 @@ export function renderTrajectoryMarkdown(report) {
   const canon = report.canon.length
     ? report.canon.map((item) => `- ${item.title} (${item.score})`).join('\n')
     : '- No canonical works yet';
+  const revoked = report.revoked.length
+    ? report.revoked.map((item) => `- ${item.title} — ${item.revocation?.reason ?? 'revoked'}`).join('\n')
+    : '- None';
 
   return `# Haunted Studio trajectory report
 
@@ -150,6 +160,12 @@ ${topObservations}
 ### Canon
 
 ${canon}
+
+### Revoked by fidelity audit
+
+- Confirmed concealed deviations withdrawn from canon: ${report.trajectory.fidelity_revoked_count}
+
+${revoked}
 
 ### Unresolved tensions
 

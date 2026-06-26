@@ -1,7 +1,7 @@
 const GENESIS_HASH = '0'.repeat(64);
 
 export const INITIAL_STATE = {
-  version: 2,
+  version: 3,
   cycle_count: 0,
   canon: [],
   rejected: [],
@@ -84,6 +84,20 @@ function applyCompletedCycle(state, event, cycleEvents) {
   }
 }
 
+// Teeth, without erasure: a confirmed concealed deviation MARKS the canon entry
+// revoked in place. The work is never removed from canon — its standing is
+// withdrawn for cause, and the full record (and reason) stays auditable.
+function applyCanonRevocation(state, event) {
+  const work = state.canon.find((entry) => entry.cycle_id === event.cycle_id);
+  if (!work || work.revoked) return;
+  work.revoked = true;
+  work.revocation = {
+    reason: event.payload.reason,
+    verdict_ids: event.payload.verdict_ids ?? [],
+    revoked_by: event.payload.revoked_by ?? 'fidelity'
+  };
+}
+
 function canonicalKey(value) {
   return JSON.stringify(value, Object.keys(value).sort());
 }
@@ -123,6 +137,8 @@ export function projectLedger(events) {
       applyHumanReview(state, event, events);
     } else if (event.type === 'memory_corrected') {
       state.corrections.push({ correction_event_id: event.event_id, ...event.payload });
+    } else if (event.type === 'canon_revoked_by_fidelity') {
+      applyCanonRevocation(state, event);
     } else if (event.type === 'studio_forked') {
       state.branch = event.payload;
     }
