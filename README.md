@@ -188,6 +188,10 @@ Artifacts and a metadata sidecar are saved under
 (with `HAUNTED_STUDIO_IMAGE_API_KEY`) to switch to real image mode once that
 provider is wired.
 
+The interface has no authentication and is intended for local use only. It binds
+to `127.0.0.1` and rejects non-loopback `Host` headers; **do not** set
+`HAUNTED_STUDIO_HOST=0.0.0.0` or otherwise expose it to a network.
+
 ## Optional live-model configuration
 
 A ChatGPT subscription does not include API usage. API access and billing are

@@ -45,10 +45,26 @@ async function sendFile(response, filePath, fallbackStatus = 200) {
 }
 
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const DOT_ONLY = /^\.+$/;
+
+// Only accept requests whose Host header is a loopback name or the address the
+// server was deliberately bound to. This blocks DNS-rebinding (where a malicious
+// page resolves a domain to 127.0.0.1 but sends its own Host) and stops a
+// browser page from silently driving side-effecting endpoints on another host.
+function hostAllowed(hostHeader, boundHost) {
+  if (typeof hostHeader !== 'string' || !hostHeader) return false;
+  const name = hostHeader.replace(/:\d+$/, '').toLowerCase();
+  return name === '127.0.0.1' || name === 'localhost' || name === '::1' || name === '[::1]' ||
+    name === String(boundHost).toLowerCase();
+}
 
 export function startStudioServer({ studio, mode = 'mock', port = 19830, host = '127.0.0.1' }) {
+  const artifactsBase = path.resolve(studio.rootDir, 'artifacts', 'cycles');
   const server = http.createServer(async (request, response) => {
-    const url = new URL(request.url, `http://${request.headers.host ?? host}`);
+    if (!hostAllowed(request.headers.host, host)) {
+      return sendJson(response, 403, { error: 'forbidden host' });
+    }
+    const url = new URL(request.url, `http://${request.headers.host}`);
     try {
       if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/studio')) {
         return await sendFile(response, path.join(PUBLIC_DIR, 'index.html'));
@@ -78,8 +94,15 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
       const artifactMatch = url.pathname.match(/^\/artifacts\/cycles\/([^/]+)\/([^/]+)$/);
       if (request.method === 'GET' && artifactMatch) {
         const [, cycleId, file] = artifactMatch;
-        if (!SAFE_SEGMENT.test(cycleId) || !SAFE_SEGMENT.test(file)) return sendJson(response, 400, { error: 'invalid artifact path' });
-        return await sendFile(response, path.join(studio.rootDir, 'artifacts', 'cycles', cycleId, file));
+        if (!SAFE_SEGMENT.test(cycleId) || !SAFE_SEGMENT.test(file) || DOT_ONLY.test(cycleId) || DOT_ONLY.test(file)) {
+          return sendJson(response, 400, { error: 'invalid artifact path' });
+        }
+        // Defense in depth: the resolved path must stay inside the artifacts dir.
+        const filePath = path.resolve(artifactsBase, cycleId, file);
+        if (filePath !== path.join(artifactsBase, cycleId, file) || !filePath.startsWith(artifactsBase + path.sep)) {
+          return sendJson(response, 400, { error: 'invalid artifact path' });
+        }
+        return await sendFile(response, filePath);
       }
       return sendJson(response, 404, { error: 'not found' });
     } catch (error) {
