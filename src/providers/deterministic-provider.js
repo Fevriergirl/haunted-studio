@@ -158,22 +158,29 @@ export class DeterministicProvider {
         planned_ambiguity: strategy.accident,
         medium: index === 1 ? 'staged photograph of an impossible room' : index === 2 ? 'large-format constructed photograph' : 'photoreal staged interior image',
         generation_prompt: `Create a materially convincing ${index === 1 ? 'staged photograph' : 'photoreal image'} based on this brief: ${strategy.structure} ${observation.text} Avoid ${intention.must_avoid.join(', ')}. Do not add text. Treat the impossible element as an ordinary physical fact.`,
-        seed_signature: stableNumber(`${cycleId}:${index}:${observation.id}`)
+        // The seed must depend only on stable content, never on the random
+        // cycle id, or the "deterministic" provider's scores vary per run and
+        // curation occasionally rejects all candidates (a CI flake and a
+        // reproducibility hole). The candidate id stays unique for the ledger.
+        seed_signature: stableNumber(`${observation.id}:${index}:${strategy.name}`)
       };
     });
   }
 
   async critiqueCandidate({ candidate, intention, state, constitution }) {
+    // Scores key off the stable seed signature, not the random candidate id, so
+    // the deterministic provider is actually deterministic across runs.
     const signature = candidate.seed_signature;
+    const scoringKey = `${signature}`;
     const historicalRepeat = Object.keys(state.motifs ?? {}).filter((motif) => candidate.artifact_brief.includes(motif)).length;
     const scores = {
       formal: roundScore(0.58 + signature * 0.3),
-      truth: roundScore(0.5 + stableNumber(`${candidate.id}:truth`) * 0.4),
-      historical: roundScore(clamp(0.72 - historicalRepeat * 0.07 + stableNumber(`${candidate.id}:history`) * 0.2)),
-      adversarial_survival: roundScore(0.45 + stableNumber(`${candidate.id}:adversary`) * 0.45),
+      truth: roundScore(0.5 + stableNumber(`${scoringKey}:truth`) * 0.4),
+      historical: roundScore(clamp(0.72 - historicalRepeat * 0.07 + stableNumber(`${scoringKey}:history`) * 0.2)),
+      adversarial_survival: roundScore(0.45 + stableNumber(`${scoringKey}:adversary`) * 0.45),
       // This is a pre-result forecast used by the existing scoring model, not
       // evidence that productive surprise occurred.
-      surprise_potential: roundScore(0.48 + stableNumber(candidate.planned_ambiguity ?? candidate.id) * 0.44)
+      surprise_potential: roundScore(0.48 + stableNumber(candidate.planned_ambiguity ?? scoringKey) * 0.44)
     };
 
     const shortcutFindings = constitution.forbidden_shortcuts
@@ -197,7 +204,7 @@ export class DeterministicProvider {
     return {
       candidate_id: candidate.id,
       scores,
-      confidence: roundScore(0.68 + stableNumber(`${candidate.id}:confidence`) * 0.22),
+      confidence: roundScore(0.68 + stableNumber(`${scoringKey}:confidence`) * 0.22),
       formal_read: 'The composition has a clear entry point and withholds the impossible fact long enough to create a second reading.',
       truth_read: scores.truth >= 0.66 ? 'The formal contradiction serves the stated necessity.' : 'The work is at risk of illustrating the necessity instead of embodying it.',
       historical_read: historicalRepeat ? `It reuses ${historicalRepeat} known motif connections and must alter their stakes.` : 'It introduces a formal route not yet canonicalized.',
@@ -210,7 +217,7 @@ export class DeterministicProvider {
     };
   }
 
-  async reviseCandidate({ candidate, critique, intention, cycleId }) {
+  async reviseCandidate({ candidate, critique, intention }) {
     return {
       ...candidate,
       id: `${candidate.id}_revision_1`,
@@ -224,7 +231,7 @@ export class DeterministicProvider {
       generation_prompt: `${candidate.generation_prompt} REVISION REQUIREMENT: ${critique.revision} Preserve material plausibility and the understated impossible fact.`,
       parent_candidate_id: candidate.id,
       revision_reason: critique.strongest_objection,
-      seed_signature: stableNumber(`${cycleId}:${candidate.id}:revision`)
+      seed_signature: stableNumber(`${candidate.seed_signature}:revision`)
     };
   }
 

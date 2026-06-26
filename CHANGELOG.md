@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix the deterministic provider's scoring to depend only on stable content
+  (observation, candidate index, strategy) instead of the random cycle id, so it
+  is actually deterministic. Previously ~0.5% of runs scored every candidate
+  below the curation threshold and rejected all of them, which flaked CI and
+  broke experiment reproducibility.
 - Require blind post-result artifact evidence and adversarial review before a
   deviation can be classified as productive surprise.
 - Treat legacy `proposed_accident` fields as planned ambiguity rather than
