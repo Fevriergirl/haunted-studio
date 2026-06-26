@@ -15,8 +15,11 @@ export const POST_CYCLE_EVENT_TYPES = new Set([
   'fidelity_signals_detected',
   'fidelity_violation_alleged',
   'fidelity_adjudicated',
-  'canon_revoked_by_fidelity'
+  'canon_revoked_by_fidelity',
+  'artifact_decision_recorded'
 ]);
+
+const ARTIFACT_DECISIONS = new Set(['accept', 'reject', 'unresolved']);
 
 const FIDELITY_EVENT_TYPES = new Set([
   'fidelity_intention_frozen',
@@ -310,6 +313,7 @@ function validateEnvelope({ type, actor, cycleId, payload, schemaVersion }) {
     type === 'human_review_recorded' ||
     type === 'mailbox_observations_consumed' ||
     type === 'canon_revoked_by_fidelity' ||
+    type === 'artifact_decision_recorded' ||
     FIDELITY_EVENT_TYPES.has(type);
   if (requiresCycle && !hasCycleIdentity(cycleId)) {
     throw new Error(`Ledger event ${type} requires a non-empty cycle identity.`);
@@ -518,12 +522,24 @@ function validateCanonRevocation({ cycleId, payload }, events) {
   }
 }
 
+// The studio operator's accept/reject/unresolved decision: a valid choice, at
+// most one per cycle.
+function validateArtifactDecision({ cycleId, payload }, events) {
+  if (!ARTIFACT_DECISIONS.has(payload.decision)) {
+    throw new Error('artifact_decision_recorded requires a decision of accept, reject, or unresolved.');
+  }
+  if (events.some((event) => event.type === 'artifact_decision_recorded' && event.cycle_id === cycleId)) {
+    throw new Error(`Cycle ${cycleId} already has an artifact decision.`);
+  }
+}
+
 export function validateEventBeforeAppend(event, existingEvents, options = {}) {
   validateEnvelope(event);
   if (POST_CYCLE_EVENT_TYPES.has(event.type)) {
     validatePostCycleTransition(event, existingEvents);
     if (FIDELITY_EVENT_TYPES.has(event.type)) validateFidelityEvent(event, existingEvents);
     if (event.type === 'canon_revoked_by_fidelity') validateCanonRevocation(event, existingEvents);
+    if (event.type === 'artifact_decision_recorded') validateArtifactDecision(event, existingEvents);
     return;
   }
   if (CYCLE_EVENT_TYPES.has(event.type)) {

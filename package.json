@@ -13,6 +13,7 @@
     "status": "node src/cli.js status",
     "verify": "node src/cli.js verify",
     "serve": "node src/cli.js serve",
+    "studio": "node src/cli.js studio",
     "reset": "node src/cli.js reset",
     "test": "node --test",
     "check": "node scripts/check.js",
