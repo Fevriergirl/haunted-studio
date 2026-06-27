@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Block cross-site requests to the studio's state-changing endpoints. A
+  malicious page could otherwise issue a CORS "simple request" (e.g.
+  `Content-Type: text/plain`, which the server still parses as JSON) to a
+  loopback endpoint and trigger an image cycle that spends the in-memory key's
+  budget, or clear the key. The server now rejects any non-GET request whose
+  `Sec-Fetch-Site` is present and not `same-origin`/`none` (browsers always send
+  it and JS cannot forge it; non-browser clients omit it and are unaffected).
+- Make the studio interface drive the whole setup/run flow from the browser: a
+  Setup panel switches mock/image, takes the image API key (held in server memory
+  only — never written to disk, returned, or logged), picks the model/size, and
+  tests the connection (a free `/models` auth check). Per-run mode/model/size are
+  passed to the provider via an in-process env override; the key is required for
+  image cycles and redacted everywhere.
 - Wire the real image provider behind the artifact-adapter seam: image mode now
   calls an OpenAI-images-compatible endpoint and saves a PNG, accepting either a
   base64 (`b64_json`) or a `url` response. Hardening: the API key is only ever sent

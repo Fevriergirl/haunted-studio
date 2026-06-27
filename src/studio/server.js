@@ -62,11 +62,34 @@ function hostAllowed(hostHeader, boundHost) {
     name === String(boundHost).toLowerCase();
 }
 
-export function startStudioServer({ studio, mode = 'mock', port = 19830, host = '127.0.0.1' }) {
+const DEFAULT_IMAGE_BASE_URL = 'https://api.openai.com/v1';
+const SUGGESTED_MODELS = ['gpt-image-1', 'dall-e-3'];
+
+// CSRF guard. Browsers always attach Sec-Fetch-Site on requests they originate
+// and JS cannot forge or strip it; a cross-origin page can otherwise issue a
+// CORS "simple request" (e.g. Content-Type: text/plain, which we still parse as
+// JSON) to a state-changing endpoint on loopback. Reject anything the browser
+// labels as not same-origin. Non-browser clients (curl, the CLI, the test
+// suite) omit the header entirely, so an absent value is allowed.
+function isCrossSiteRequest(request) {
+  const site = request.headers['sec-fetch-site'];
+  return typeof site === 'string' && site !== 'same-origin' && site !== 'none';
+}
+
+export function startStudioServer({ studio, mode = 'mock', port = 19830, host = '127.0.0.1', fetchImpl = globalThis.fetch }) {
   const artifactsBase = path.resolve(studio.rootDir, 'artifacts', 'cycles');
+  // The image API key lives ONLY in this process's memory: seeded from the env if
+  // present, set via the UI, and never written to disk, returned, or logged.
+  let imageKey = process.env.HAUNTED_STUDIO_IMAGE_API_KEY ?? null;
+  const redact = (text) => (imageKey ? String(text).replaceAll(imageKey, '[redacted]') : String(text));
+  const imageBaseUrl = () => (process.env.HAUNTED_STUDIO_IMAGE_BASE_URL ?? DEFAULT_IMAGE_BASE_URL).replace(/\/$/, '');
   const server = http.createServer(async (request, response) => {
     if (!hostAllowed(request.headers.host, host)) {
       return sendJson(response, 403, { error: 'forbidden host' });
+    }
+    // Block cross-site state changes before any side-effecting route runs.
+    if (request.method !== 'GET' && request.method !== 'HEAD' && isCrossSiteRequest(request)) {
+      return sendJson(response, 403, { error: 'cross-site request blocked' });
     }
     const url = new URL(request.url, `http://${request.headers.host}`);
     try {
@@ -77,7 +100,43 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
         return await sendFile(response, path.join(PUBLIC_DIR, 'app.js'));
       }
       if (request.method === 'GET' && url.pathname === '/api/config') {
-        return sendJson(response, 200, { mode, default_mode: 'mock' });
+        return sendJson(response, 200, {
+          mode,
+          default_mode: 'mock',
+          image_key_present: Boolean(imageKey),
+          model: process.env.HAUNTED_STUDIO_IMAGE_MODEL ?? SUGGESTED_MODELS[0],
+          size: process.env.HAUNTED_STUDIO_IMAGE_SIZE ?? '1024x1024',
+          image_base_host: (() => { try { return new URL(imageBaseUrl()).host; } catch { return imageBaseUrl(); } })(),
+          suggested_models: SUGGESTED_MODELS
+        });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/image/key') {
+        const body = await readBody(request);
+        if (typeof body.key !== 'string' || !body.key.trim()) return sendJson(response, 400, { error: 'key is required' });
+        imageKey = body.key.trim(); // in-memory only; never persisted or echoed
+        return sendJson(response, 200, { image_key_present: true });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/image/key/clear') {
+        imageKey = null;
+        return sendJson(response, 200, { image_key_present: false });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/image/test') {
+        if (!imageKey) return sendJson(response, 200, { ok: false, error: 'No image API key set.' });
+        // Never send the key to a non-https endpoint (loopback http allowed for dev).
+        let baseParsed;
+        try { baseParsed = new URL(imageBaseUrl()); } catch { return sendJson(response, 200, { ok: false, error: 'Invalid image base URL.' }); }
+        const loopback = baseParsed.hostname === 'localhost' || baseParsed.hostname === '127.0.0.1' || baseParsed.hostname === '::1';
+        if (baseParsed.protocol !== 'https:' && !(baseParsed.protocol === 'http:' && loopback)) {
+          return sendJson(response, 200, { ok: false, error: 'Image base URL must use https; refusing to send the key in cleartext.' });
+        }
+        let res;
+        try {
+          res = await fetchImpl(`${imageBaseUrl()}/models`, { headers: { Authorization: `Bearer ${imageKey}` }, signal: AbortSignal.timeout(30_000) });
+        } catch {
+          return sendJson(response, 200, { ok: false, error: 'Could not reach the image endpoint.' });
+        }
+        if (res.ok) return sendJson(response, 200, { ok: true });
+        return sendJson(response, 200, { ok: false, status: res.status, error: redact((await res.text()).slice(0, 300)) });
       }
       if (request.method === 'GET' && url.pathname === '/api/state') {
         await studio.initialize();
@@ -86,7 +145,18 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
       if (request.method === 'POST' && url.pathname === '/api/cycle') {
         const body = await readBody(request);
         if (typeof body.seed !== 'string' || !body.seed.trim()) return sendJson(response, 400, { error: 'seed is required' });
-        const summary = await beginStudioCycle({ studio, seed: body.seed.trim(), mode: body.mode === 'image' ? 'image' : mode, operationId: body.operation_id ?? id('studio-cycle') });
+        const wantImage = body.mode === 'image' || (body.mode == null && mode === 'image');
+        let env = process.env;
+        if (wantImage) {
+          if (!imageKey) return sendJson(response, 400, { error: 'Set an image API key first (Setup → Image), or use mock mode.' });
+          env = { ...process.env, HAUNTED_STUDIO_IMAGE_API_KEY: imageKey };
+          if (typeof body.model === 'string' && body.model.trim()) env.HAUNTED_STUDIO_IMAGE_MODEL = body.model.trim();
+          if (typeof body.size === 'string' && body.size.trim()) env.HAUNTED_STUDIO_IMAGE_SIZE = body.size.trim();
+        }
+        const summary = await beginStudioCycle({
+          studio, seed: body.seed.trim(), mode: wantImage ? 'image' : 'mock',
+          operationId: body.operation_id ?? id('studio-cycle'), env
+        });
         return sendJson(response, 200, summary);
       }
       const decisionMatch = url.pathname.match(/^\/api\/cycle\/([A-Za-z0-9._-]+)\/decision$/);
@@ -111,7 +181,8 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
       return sendJson(response, 404, { error: 'not found' });
     } catch (error) {
       if (error.code === 'ENOENT') return sendJson(response, 404, { error: 'not found' });
-      return sendJson(response, error.statusCode ?? 500, { error: error.message });
+      // Redact defensively: a deep error must never surface the in-memory key.
+      return sendJson(response, error.statusCode ?? 500, { error: redact(error.message) });
     }
   });
   server.listen(port, host);
