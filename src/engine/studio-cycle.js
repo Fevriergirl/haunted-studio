@@ -65,8 +65,10 @@ async function saveArtifactBundle({ studio, seed, mode, extension, result }) {
   return { dir, artifactFile, metadata, artifactUrl: `/artifacts/cycles/${cycleId}/artifact.${extension}` };
 }
 
-export async function beginStudioCycle({ studio, seed, mode = 'mock', operationId = null }) {
-  const provider = new StudioArtistProvider(mode);
+export async function beginStudioCycle({ studio, seed, mode = 'mock', operationId = null, env = process.env }) {
+  // `env` carries per-run image settings (in-memory key, model, size) from the
+  // server without ever persisting them. Mock mode ignores it.
+  const provider = new StudioArtistProvider(mode, env);
   const observation = makeSeedObservation(seed);
   const result = await runCreativeCycle({
     studio, provider, observations: [observation], generateImage: true,

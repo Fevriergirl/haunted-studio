@@ -34,7 +34,15 @@
     .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #34343f; margin: 2px 4px 2px 0; }
     .canon-item { padding: 8px; border: 1px solid #26262e; border-radius: 8px; margin-bottom: 6px; }
     .revoked { text-decoration: line-through; color: #b06a78; }
-    #error { color: #ff8a8a; min-height: 18px; font-size: 12px; }
+    #error { color: #ff8a8a; min-height: 18px; font-size: 12px; display: block; margin-top: 6px; }
+    input { background: #0e0e12; color: #e7e7ea; border: 1px solid #2c2c36; border-radius: 8px; padding: 8px; font: inherit; }
+    input.wide { width: 100%; }
+    .hidden { display: none; }
+    .toggle button.active { background: #3b4ee0; border-color: #4a5cf0; font-weight: 700; }
+    .ok { color: #7ee2a8; }
+    .bad { color: #ff8a8a; }
+    label { display: block; font-size: 11px; color: #9a9aa6; margin: 8px 0 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+    code { background: #0e0e12; border: 1px solid #2c2c36; border-radius: 4px; padding: 1px 5px; }
   </style>
 </head>
 <body>
@@ -45,6 +53,32 @@
   </header>
   <main>
     <section>
+      <div class="panel">
+        <h2>0 · Setup</h2>
+        <div class="row toggle" id="mode-toggle">
+          <button data-mode="mock" class="active">Mock (offline, no key)</button>
+          <button data-mode="image">Image (real provider)</button>
+        </div>
+        <div id="image-setup" class="hidden">
+          <label for="image-key">Image API key — held in server memory only, never saved to disk</label>
+          <input id="image-key" class="wide" type="password" autocomplete="off" placeholder="sk-..." />
+          <div class="row">
+            <button id="set-key">Set key</button>
+            <button id="clear-key">Clear</button>
+            <span id="key-status" class="muted">key: not set</span>
+          </div>
+          <label for="image-model">Model</label>
+          <input id="image-model" type="text" placeholder="gpt-image-1" />
+          <label for="image-size">Size</label>
+          <input id="image-size" type="text" placeholder="1024x1024" />
+          <div class="row">
+            <button id="test-conn">Test connection</button>
+            <span id="test-result" class="muted"></span>
+          </div>
+          <p class="text muted">If a model needs organization verification, set the model to <code>dall-e-3</code>. The key never leaves this machine.</p>
+        </div>
+      </div>
+
       <div class="panel">
         <h2>1 · Seed idea</h2>
         <textarea id="seed" placeholder="e.g. a kitchen that quietly refuses to be entered"></textarea>

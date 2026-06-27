@@ -176,8 +176,12 @@ npm run studio        # open http://127.0.0.1:19830/studio
 Enter a seed idea, click **Begin Cycle**, and the screen reveals the artist
 brief, the image prompt, the generated (mock) artifact, and a short reflection;
 then you accept, reject, or mark it unresolved and watch canon/memory update. A
-banner shows whether you are in **MOCK** or **IMAGE** mode. Run one cycle from the
-CLI instead:
+banner shows whether you are in **MOCK** or **IMAGE** mode.
+
+The **Setup** panel runs everything from the browser: switch Mock/Image, paste an
+image API key (held **in server memory only** — never written to disk or returned),
+choose a model, and **Test connection** — no environment variables required. Run
+one cycle from the CLI instead:
 
 ```bash
 node src/cli.js run --seed "a kitchen that quietly refuses to be entered"

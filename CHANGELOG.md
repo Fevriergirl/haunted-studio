@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Make the studio interface drive the whole setup/run flow from the browser: a
+  Setup panel switches mock/image, takes the image API key (held in server memory
+  only — never written to disk, returned, or logged), picks the model/size, and
+  tests the connection (a free `/models` auth check). Per-run mode/model/size are
+  passed to the provider via an in-process env override; the key is required for
+  image cycles and redacted everywhere.
 - Wire the real image provider behind the artifact-adapter seam: image mode now
   calls an OpenAI-images-compatible endpoint and saves a PNG, accepting either a
   base64 (`b64_json`) or a `url` response. Hardening: the API key is only ever sent
