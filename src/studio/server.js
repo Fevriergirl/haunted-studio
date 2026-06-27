@@ -65,6 +65,17 @@ function hostAllowed(hostHeader, boundHost) {
 const DEFAULT_IMAGE_BASE_URL = 'https://api.openai.com/v1';
 const SUGGESTED_MODELS = ['gpt-image-1', 'dall-e-3'];
 
+// CSRF guard. Browsers always attach Sec-Fetch-Site on requests they originate
+// and JS cannot forge or strip it; a cross-origin page can otherwise issue a
+// CORS "simple request" (e.g. Content-Type: text/plain, which we still parse as
+// JSON) to a state-changing endpoint on loopback. Reject anything the browser
+// labels as not same-origin. Non-browser clients (curl, the CLI, the test
+// suite) omit the header entirely, so an absent value is allowed.
+function isCrossSiteRequest(request) {
+  const site = request.headers['sec-fetch-site'];
+  return typeof site === 'string' && site !== 'same-origin' && site !== 'none';
+}
+
 export function startStudioServer({ studio, mode = 'mock', port = 19830, host = '127.0.0.1', fetchImpl = globalThis.fetch }) {
   const artifactsBase = path.resolve(studio.rootDir, 'artifacts', 'cycles');
   // The image API key lives ONLY in this process's memory: seeded from the env if
@@ -75,6 +86,10 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
   const server = http.createServer(async (request, response) => {
     if (!hostAllowed(request.headers.host, host)) {
       return sendJson(response, 403, { error: 'forbidden host' });
+    }
+    // Block cross-site state changes before any side-effecting route runs.
+    if (request.method !== 'GET' && request.method !== 'HEAD' && isCrossSiteRequest(request)) {
+      return sendJson(response, 403, { error: 'cross-site request blocked' });
     }
     const url = new URL(request.url, `http://${request.headers.host}`);
     try {

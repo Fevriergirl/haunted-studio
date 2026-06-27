@@ -12,10 +12,10 @@ const cwd = process.cwd();
 const constitution = await readJson(path.join(cwd, 'config', 'constitution.json'));
 const experiment = await readJson(path.join(cwd, 'config', 'experiment.json'));
 
-function request(port, method, reqPath, { host, json } = {}) {
+function request(port, method, reqPath, { host, json, extraHeaders } = {}) {
   return new Promise((resolve, reject) => {
     const data = json ? JSON.stringify(json) : null;
-    const headers = { Host: host ?? `127.0.0.1:${port}` };
+    const headers = { Host: host ?? `127.0.0.1:${port}`, ...extraHeaders };
     if (data) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(data); }
     const req = http.request({ host: '127.0.0.1', port, path: reqPath, method, headers }, (res) => {
       let body = '';
@@ -91,6 +91,28 @@ test('connection test validates auth and redacts the key on error', async () => 
     assert.equal(bad.json.ok, false);
     assert.ok(bad.text.includes('[redacted]'), 'error must be redacted');
     assert.ok(!bad.text.includes(KEY), 'raw key must never appear');
+  });
+});
+
+test('a cross-site POST is blocked before any side effect, but absent Sec-Fetch-Site works', async () => {
+  await withServer(undefined, async (port) => {
+    const KEY = 'sk-CSRF-VICTIM-KEY';
+    // Seed an in-memory key via a normal (no Sec-Fetch-Site) request.
+    await request(port, 'POST', '/api/image/key', { json: { key: KEY } });
+
+    // A forged cross-site request must not be able to clear it.
+    const attack = await request(port, 'POST', '/api/image/key/clear', { extraHeaders: { 'Sec-Fetch-Site': 'cross-site' } });
+    assert.equal(attack.status, 403);
+    assert.match(attack.json.error, /cross-site/i);
+
+    // The key survived the attempt.
+    const cfg = await request(port, 'GET', '/api/config');
+    assert.equal(cfg.json.image_key_present, true);
+
+    // same-origin is allowed; clear works as expected.
+    const cleared = await request(port, 'POST', '/api/image/key/clear', { extraHeaders: { 'Sec-Fetch-Site': 'same-origin' } });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.json.image_key_present, false);
   });
 });
 
