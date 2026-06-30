@@ -107,6 +107,127 @@ async function refreshState() {
   try { renderState(await api('GET', '/api/state')); } catch { /* ignore */ }
 }
 
+// --- Provenance (the auditable, role-separated process) ------------------
+
+function shortHash(value) {
+  const s = String(value ?? '');
+  if (!s) return '—';
+  return s.length > 12 ? `${s.slice(0, 8)}…` : s;
+}
+
+function snippet(value, max = 90) {
+  const s = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+// Map a ledger actor to a short human role label. The blind witness, deviation
+// comparator and adversarial reviewer are highlighted because their independence
+// from the maker is the point.
+function roleMeta(actor) {
+  const map = {
+    'role:attention': { label: 'Attention', cls: '' },
+    'role:artist': { label: 'Artist', cls: '' },
+    'role:critics': { label: 'Critics', cls: '' },
+    'role:curator': { label: 'Curator', cls: '' },
+    'role:editor': { label: 'Editor', cls: '' },
+    'role:artifact-witness': { label: 'Witness · blind', cls: 'role-witness' },
+    'role:deviation-comparator': { label: 'Deviation comparator', cls: 'role-comparator' },
+    'role:adversarial-surprise-reviewer': { label: 'Adversarial reviewer', cls: 'role-reviewer' },
+    'visual-critic': { label: 'Visual critic', cls: '' },
+    'role:audience-prediction': { label: 'Audience model', cls: '' },
+    'role:memory': { label: 'Memory', cls: '' },
+    'image-provider': { label: 'Image provider', cls: '' },
+    'orchestrator': { label: 'Orchestrator', cls: 'role-orchestrator' },
+    'experiment-orchestrator': { label: 'Experiment', cls: 'role-orchestrator' }
+  };
+  return map[actor] ?? { label: String(actor ?? 'unknown').replace(/^role:/, ''), cls: '' };
+}
+
+// Turn one ledger event into a title + one-line detail drawn from its real
+// payload. `special` flags the steps that make the project distinctive.
+function describeEvent(event) {
+  const p = event.payload ?? {};
+  switch (event.type) {
+    case 'cycle_started':
+      return { title: 'Cycle started', detail: `condition: ${p.condition ?? '—'}` };
+    case 'observation_selected':
+      return { title: 'Observation chosen', detail: `“${snippet(p.observation?.text)}”` };
+    case 'intention_locked':
+      return { title: 'Intention locked', special: true,
+        detail: `“${snippet(p.intention)}” · commitment ${shortHash(p.intention_commitment ?? p.intention_hash)} — frozen; the promise the work is judged against` };
+    case 'candidates_generated':
+      return { title: 'Candidates proposed', detail: `${p.candidates?.length ?? 0} candidate(s) generated` };
+    case 'critics_reported':
+      return { title: 'Critic panel', detail: `${p.critiques?.length ?? 0} independent critique(s)` };
+    case 'curation_decided':
+      return { title: 'Curation', detail: `decision: ${p.decision ?? '—'}${p.selected_candidate_id ? ` · selected ${p.selected_candidate_id}` : ''}` };
+    case 'curation_overridden_by_condition':
+      return { title: 'Curation overridden by condition', detail: `decision: ${p.decision ?? '—'}` };
+    case 'candidate_revised':
+      return { title: 'Candidate revised', detail: `revised ${p.parent_candidate_id ?? ''}` };
+    case 'revision_critiqued':
+      return { title: 'Revision critiqued', detail: '' };
+    case 'artifact_generated':
+      return { title: 'Artifact generated', detail: `bytes hashed ${shortHash(p.artifact_hash)}` };
+    case 'artifact_witnessed':
+      return { title: 'Blind witness', special: true,
+        detail: `${p.observations?.length ?? 0} observation(s) — described from the bytes alone, without the maker’s claims` };
+    case 'artifact_deviations_compared':
+      return { title: 'Deviation comparison', special: true,
+        detail: `${p.comparisons?.length ?? 0} deviation(s) compared against the locked plan` };
+    case 'surprise_reviewed':
+      return { title: 'Adversarial surprise review', special: true,
+        detail: p.no_productive_surprise ? 'no productive surprise confirmed'
+          : `${(p.reviewed_evidence ?? []).filter((r) => r.classification === 'productive_surprise').length} productive surprise(s) confirmed` };
+    case 'artifact_audited':
+      return { title: 'Visual audit', detail: `${p.recommended_action ?? '—'} · score ${p.overall_score ?? '—'}` };
+    case 'artifact_audit_not_passed':
+      return { title: 'Artifact audit not passed', detail: `canon status: ${p.canon_status ?? '—'}` };
+    case 'post_result_evidence_unavailable':
+      return { title: 'Post-result evidence unavailable', detail: p.reason ?? '' };
+    case 'audience_predicted':
+      return { title: 'Audience prediction', detail: '' };
+    case 'memory_consolidated':
+      return { title: 'Memory consolidated', detail: p.motifs ? `${Object.keys(p.motifs).length} motif(s) carried forward` : 'trajectory updated' };
+    case 'cycle_completed':
+      return { title: 'Cycle completed', detail: `canon status: ${p.canon_status ?? '—'}` };
+    case 'cycle_failed':
+      return { title: 'Cycle failed', detail: snippet(p.message) };
+    case 'artifact_decision_recorded':
+      return { title: 'Human decision recorded', special: true, detail: `${p.decision ?? ''}${p.note ? ` — ${snippet(p.note)}` : ''}` };
+    case 'canon_revoked_by_fidelity':
+      return { title: 'Canon revoked by fidelity', special: true,
+        detail: `${p.verdict ?? ''} ${snippet(p.reason)} — marked revoked, never erased` };
+    default:
+      return { title: event.type, detail: '' };
+  }
+}
+
+function renderProvenance(data) {
+  const el = $('provenance');
+  if (!data || !Array.isArray(data.events) || data.events.length === 0) { el.innerHTML = ''; return; }
+  const v = data.verification ?? {};
+  const badge = v.valid
+    ? `<span class="verify-badge verify-ok">✓ ledger verified · ${v.count} events · head ${shortHash(v.head)}</span>`
+    : `<span class="verify-badge verify-bad">✗ ledger broken: ${escapeHtml(v.error ?? 'unknown')}</span>`;
+  const items = data.events.map((event) => {
+    const role = roleMeta(event.actor);
+    const d = describeEvent(event);
+    return `<li class="trail-item ${role.cls}">`
+      + `<div><span class="trail-role">${escapeHtml(role.label)}</span>`
+      + `<span class="trail-title${d.special ? ' trail-special' : ''}">${escapeHtml(d.title)}</span></div>`
+      + (d.detail ? `<div class="trail-detail">${escapeHtml(d.detail)}</div>` : '')
+      + `<div class="trail-hash">#${event.sequence} · ${shortHash(event.previous_hash)} → ${shortHash(event.hash)}</div>`
+      + '</li>';
+  }).join('');
+  el.innerHTML = badge + `<ul class="trail">${items}</ul>`;
+}
+
+async function loadProvenance(cycleId) {
+  if (!cycleId) return;
+  try { renderProvenance(await api('GET', `/api/cycle/${cycleId}/provenance`)); } catch { /* ignore */ }
+}
+
 function showError(message) {
   let text = message;
   if (/Maximum cycle budget reached/i.test(message)) text += ' — run `npm run reset` in the terminal to archive this studio and start fresh.';
@@ -141,6 +262,7 @@ async function beginCycle() {
     $('step-decision').classList.add('active');
     decisionButtons(Boolean(cycle.artifact_url));
     renderState(cycle.state);
+    await loadProvenance(currentCycleId);
   } catch (error) {
     showError(error.message);
   } finally {
@@ -156,6 +278,7 @@ async function decide(decision) {
     const result = await api('POST', `/api/cycle/${currentCycleId}/decision`, { decision });
     $('decision-result').textContent = `Recorded: ${decision}.`;
     renderState(result.state);
+    await loadProvenance(currentCycleId);
   } catch (error) {
     $('decision-result').textContent = error.message;
     decisionButtons(true);

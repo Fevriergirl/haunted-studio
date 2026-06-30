@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Make the studio interface show the whole process that makes this project
+  special, not just the finished artifact. A new "auditable process" panel
+  renders the role-separated trail behind each work — attention, artist, critics,
+  curator, the *blind* witness, the deviation comparator, and the adversarial
+  surprise reviewer — straight from the append-only ledger, with the frozen
+  intention commitment, the human decision, and any marked-not-erased canon
+  revocation called out. A badge verifies the hash chain (`✓ ledger verified · N
+  events · head …`) so the auditability is visible, not just asserted. Backed by
+  a thin `GET /api/cycle/:id/provenance` endpoint (the ledger as recorded, no new
+  logic) and refreshed after each cycle and decision.
 - Block cross-site requests to the studio's state-changing endpoints. A
   malicious page could otherwise issue a CORS "simple request" (e.g.
   `Content-Type: text/plain`, which the server still parses as JSON) to a
