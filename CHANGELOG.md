@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Rewrite the studio interface in plain language so anyone can understand and
+  use it, and make launching one step. The page is now a single guided path —
+  type an idea, choose Practice (free, no key) or Real image, press "Make art",
+  see the piece, and "Keep it / Discard it / Not sure". The technical vocabulary
+  (intention, witness, canon, ledger, hashes) is replaced with everyday wording;
+  "How this was made" tells the story in friendly sentences, with the full
+  verified record kept behind a "Show the full record" toggle for the curious.
+  `npm run studio` now prints a clear banner and opens the page in the browser
+  automatically (set `HAUNTED_STUDIO_NO_OPEN=1` to disable; it only ever opens
+  the local loopback URL).
 - Make the studio interface show the whole process that makes this project
   special, not just the finished artifact. A new "auditable process" panel
   renders the role-separated trail behind each work — attention, artist, critics,

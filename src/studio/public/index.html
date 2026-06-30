@@ -7,131 +7,139 @@
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: ui-monospace, Menlo, Consolas, monospace; background: #0e0e12; color: #e7e7ea; }
-    header { padding: 14px 22px; border-bottom: 1px solid #26262e; display: flex; align-items: center; gap: 16px; }
-    header h1 { font-size: 16px; margin: 0; letter-spacing: 0.5px; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0e0e12; color: #e7e7ea; line-height: 1.55; }
+    header { padding: 16px 22px; border-bottom: 1px solid #26262e; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    header h1 { font-size: 17px; margin: 0; letter-spacing: 0.5px; }
+    header .tagline { color: #9a9aa6; font-size: 13px; }
     #mode-banner { margin-left: auto; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
     .mode-mock { background: #1d3a26; color: #7ee2a8; border: 1px solid #2e6b45; }
     .mode-image { background: #3a1d2a; color: #f0a6c4; border: 1px solid #6b2e4f; }
-    main { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; padding: 18px 22px; max-width: 1180px; margin: 0 auto; }
-    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-    .panel { background: #15151b; border: 1px solid #26262e; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-    .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #9a9aa6; margin: 0 0 10px; }
-    textarea { width: 100%; min-height: 64px; background: #0e0e12; color: #e7e7ea; border: 1px solid #2c2c36; border-radius: 8px; padding: 10px; font: inherit; resize: vertical; }
-    button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid #34343f; background: #20202a; color: #e7e7ea; padding: 9px 14px; }
+    main { max-width: 720px; margin: 0 auto; padding: 20px 22px 60px; }
+    .card { background: #15151b; border: 1px solid #26262e; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+    .card h2 { font-size: 15px; margin: 0 0 4px; }
+    .card .help { color: #9a9aa6; font-size: 13px; margin: 0 0 12px; }
+    textarea { width: 100%; min-height: 70px; background: #0e0e12; color: #e7e7ea; border: 1px solid #2c2c36; border-radius: 8px; padding: 11px; font: inherit; resize: vertical; }
+    input { background: #0e0e12; color: #e7e7ea; border: 1px solid #2c2c36; border-radius: 8px; padding: 9px; font: inherit; }
+    input.wide { width: 100%; }
+    button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid #34343f; background: #20202a; color: #e7e7ea; padding: 10px 16px; }
     button:hover { background: #2a2a36; }
-    button.primary { background: #3b4ee0; border-color: #4a5cf0; font-weight: 700; }
-    button.accept { background: #1d3a26; border-color: #2e6b45; }
-    button.reject { background: #3a1d22; border-color: #6b2e36; }
-    button.unresolved { background: #34301d; border-color: #6b602e; }
     button:disabled { opacity: 0.4; cursor: default; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-    pre, .text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.5; color: #cfcfd6; margin: 0; }
+    button.primary { background: #3b4ee0; border-color: #4a5cf0; font-weight: 700; font-size: 15px; padding: 12px 20px; }
+    button.keep { background: #1d3a26; border-color: #2e6b45; }
+    button.discard { background: #3a1d22; border-color: #6b2e36; }
+    button.unsure { background: #34301d; border-color: #6b602e; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    .choice { display: flex; gap: 8px; margin: 4px 0 0; }
+    .choice button { flex: 1; text-align: left; padding: 11px 13px; }
+    .choice button small { display: block; color: #9a9aa6; font-weight: 400; margin-top: 2px; }
+    .choice button.active { background: #232a4a; border-color: #4a5cf0; }
+    label { display: block; font-size: 12px; color: #9a9aa6; margin: 12px 0 4px; }
     .muted { color: #7a7a86; }
-    img.artifact { width: 100%; border-radius: 8px; border: 1px solid #2c2c36; display: block; background: #000; }
-    .step { opacity: 0.35; transition: opacity 0.2s; }
-    .step.active { opacity: 1; }
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #34343f; margin: 2px 4px 2px 0; }
-    .canon-item { padding: 8px; border: 1px solid #26262e; border-radius: 8px; margin-bottom: 6px; }
-    .revoked { text-decoration: line-through; color: #b06a78; }
-    .verify-badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-bottom: 12px; }
-    .verify-ok { background: #1d3a26; color: #7ee2a8; border: 1px solid #2e6b45; }
-    .verify-bad { background: #3a1d22; color: #ff8a8a; border: 1px solid #6b2e36; }
-    .trail { list-style: none; margin: 0; padding: 0; }
-    .trail-item { position: relative; padding: 0 0 14px 22px; border-left: 1px solid #2c2c36; }
+    .ok { color: #7ee2a8; }
+    .bad { color: #ff8a8a; }
+    .hidden { display: none; }
+    img.artifact { width: 100%; border-radius: 10px; border: 1px solid #2c2c36; display: block; background: #000; margin-bottom: 12px; }
+    .field { margin: 2px 0; }
+    .field strong { color: #e7e7ea; }
+    #error { color: #ff8a8a; font-size: 13px; }
+    code { background: #0e0e12; border: 1px solid #2c2c36; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+    .kept-line { font-size: 14px; }
+    .piece { padding: 8px 10px; border: 1px solid #26262e; border-radius: 8px; margin-top: 6px; font-size: 13px; }
+    .piece.removed { color: #b06a78; text-decoration: line-through; }
+    .story { list-style: none; margin: 8px 0 0; padding: 0; }
+    .story li { padding: 4px 0 4px 22px; position: relative; font-size: 14px; color: #d4d4da; }
+    .story li::before { content: '✓'; position: absolute; left: 0; color: #7ee2a8; font-size: 12px; }
+    .verified { font-size: 13px; color: #7ee2a8; margin-top: 10px; }
+    .verified.bad { color: #ff8a8a; }
+    .linkbtn { background: none; border: none; color: #9aa6ff; padding: 6px 0; cursor: pointer; font-size: 13px; }
+    .linkbtn:hover { text-decoration: underline; background: none; }
+    /* technical record (hidden until expanded) */
+    .trail { list-style: none; margin: 8px 0 0; padding: 0; }
+    .trail-item { position: relative; padding: 0 0 12px 20px; border-left: 1px solid #2c2c36; }
     .trail-item:last-child { border-left: 1px solid transparent; }
-    .trail-item::before { content: ''; position: absolute; left: -5px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: #3b4ee0; border: 1px solid #6a78f0; }
-    .trail-item.role-witness::before, .trail-item.role-comparator::before, .trail-item.role-reviewer::before { background: #b06a78; border-color: #d98ea0; }
-    .trail-item.role-orchestrator::before { background: #5a5a66; border-color: #7a7a86; }
-    .trail-role { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #9a9aa6; border: 1px solid #34343f; border-radius: 999px; padding: 1px 7px; margin-right: 7px; }
+    .trail-item::before { content: ''; position: absolute; left: -5px; top: 4px; width: 9px; height: 9px; border-radius: 50%; background: #3b4ee0; border: 1px solid #6a78f0; }
+    .trail-role { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #9a9aa6; border: 1px solid #34343f; border-radius: 999px; padding: 1px 7px; margin-right: 7px; }
     .trail-title { font-weight: 700; font-size: 13px; }
     .trail-detail { font-size: 12px; color: #cfcfd6; margin: 3px 0 4px; }
     .trail-hash { font-size: 10px; color: #6a6a76; word-break: break-all; }
-    .trail-special { color: #f0a6c4; }
-    #error { color: #ff8a8a; min-height: 18px; font-size: 12px; display: block; margin-top: 6px; }
-    input { background: #0e0e12; color: #e7e7ea; border: 1px solid #2c2c36; border-radius: 8px; padding: 8px; font: inherit; }
-    input.wide { width: 100%; }
-    .hidden { display: none; }
-    .toggle button.active { background: #3b4ee0; border-color: #4a5cf0; font-weight: 700; }
-    .ok { color: #7ee2a8; }
-    .bad { color: #ff8a8a; }
-    label { display: block; font-size: 11px; color: #9a9aa6; margin: 8px 0 3px; text-transform: uppercase; letter-spacing: 0.5px; }
-    code { background: #0e0e12; border: 1px solid #2c2c36; border-radius: 4px; padding: 1px 5px; }
   </style>
 </head>
 <body>
   <header>
     <h1>HAUNTED STUDIO</h1>
-    <span class="muted">artist cycle</span>
-    <span id="mode-banner" class="mode-mock">MOCK MODE</span>
+    <span class="tagline">Turn an idea into a picture.</span>
+    <span id="mode-banner" class="mode-mock">PRACTICE MODE</span>
   </header>
   <main>
-    <section>
-      <div class="panel">
-        <h2>0 · Setup</h2>
-        <div class="row toggle" id="mode-toggle">
-          <button data-mode="mock" class="active">Mock (offline, no key)</button>
-          <button data-mode="image">Image (real provider)</button>
-        </div>
-        <div id="image-setup" class="hidden">
-          <label for="image-key">Image API key — held in server memory only, never saved to disk</label>
-          <input id="image-key" class="wide" type="password" autocomplete="off" placeholder="sk-..." />
-          <div class="row">
-            <button id="set-key">Set key</button>
-            <button id="clear-key">Clear</button>
-            <span id="key-status" class="muted">key: not set</span>
-          </div>
-          <label for="image-model">Model</label>
-          <input id="image-model" type="text" placeholder="gpt-image-1" />
-          <label for="image-size">Size</label>
-          <input id="image-size" type="text" placeholder="1024x1024" />
-          <div class="row">
-            <button id="test-conn">Test connection</button>
-            <span id="test-result" class="muted"></span>
-          </div>
-          <p class="text muted">If a model needs organization verification, set the model to <code>dall-e-3</code>. The key never leaves this machine.</p>
-        </div>
+    <!-- Step 1: the idea -->
+    <div class="card">
+      <h2>1 · What should the art be about?</h2>
+      <p class="help">Type anything — a place, a feeling, a sentence. The studio will make one piece from it.</p>
+      <textarea id="seed" placeholder="e.g. a kitchen that quietly refuses to be entered"></textarea>
+
+      <label>How should it make the picture?</label>
+      <div class="choice" id="mode-toggle">
+        <button data-mode="mock" class="active">Practice <small>Free. Instant placeholder image. No key needed.</small></button>
+        <button data-mode="image">Real image <small>Uses a real AI image generator and your own key.</small></button>
       </div>
 
-      <div class="panel">
-        <h2>1 · Seed idea</h2>
-        <textarea id="seed" placeholder="e.g. a kitchen that quietly refuses to be entered"></textarea>
+      <!-- Real-image setup (only shown when "Real image" is chosen) -->
+      <div id="image-setup" class="hidden">
+        <label for="image-key">Your image AI key (stays on this computer — never saved to a file)</label>
+        <input id="image-key" class="wide" type="password" autocomplete="off" placeholder="paste your key, e.g. sk-..." />
         <div class="row">
-          <button id="begin" class="primary">Begin Cycle</button>
-          <span id="error"></span>
+          <button id="set-key">Save key</button>
+          <button id="clear-key">Forget key</button>
+          <span id="key-status" class="muted">key: not saved</span>
         </div>
-      </div>
-
-      <div class="panel step" id="step-brief"><h2>2 · Artist brief</h2><p class="text muted">Run a cycle to see the brief.</p></div>
-      <div class="panel step" id="step-prompt"><h2>3 · Image prompt</h2><p class="text muted"></p></div>
-      <div class="panel step" id="step-artifact"><h2>4–6 · Artifact (saved in project)</h2><p class="text muted"></p></div>
-      <div class="panel step" id="step-reflection"><h2>7 · Artist reflection</h2><p class="text muted"></p></div>
-      <div class="panel step" id="step-decision">
-        <h2>8 · Your decision</h2>
-        <p class="text muted">Accept, reject, or mark the artifact unresolved.</p>
+        <label for="image-model">Which generator? (leave as-is if unsure)</label>
+        <input id="image-model" type="text" placeholder="gpt-image-1" />
+        <input id="image-size" type="hidden" />
         <div class="row">
-          <button class="accept" data-decision="accept" disabled>Accept</button>
-          <button class="reject" data-decision="reject" disabled>Reject</button>
-          <button class="unresolved" data-decision="unresolved" disabled>Unresolved</button>
+          <button id="test-conn">Check it works</button>
+          <span id="test-result" class="muted"></span>
         </div>
-        <p class="text" id="decision-result"></p>
+        <p class="help" style="margin-top:10px">If your generator needs special verification, try setting it to <code>dall-e-3</code>.</p>
       </div>
-    </section>
 
-    <section>
-      <div class="panel">
-        <h2>9 · Canon / memory / trajectory</h2>
-        <div id="state"><p class="text muted">No cycles yet.</p></div>
+      <div class="row">
+        <button id="begin" class="primary">Make art</button>
+        <span id="error"></span>
       </div>
-      <div class="panel" id="provenance-panel">
-        <h2>What makes this special · the auditable process</h2>
-        <p class="text muted">Every work is produced by separate roles — attention, artist,
-          critics, curator, a <em>blind</em> witness, a deviation comparator, and an adversarial
-          reviewer — and each step is written to an append-only, hash-chained ledger. Run a
-          cycle to see the whole trail and verify it.</p>
-        <div id="provenance"></div>
+    </div>
+
+    <!-- Step 2: the result (hidden until a piece is made) -->
+    <div class="card hidden" id="result">
+      <h2>2 · Here's your piece</h2>
+      <img id="result-image" class="artifact" alt="the art that was made" />
+      <p class="field"><span class="muted">Your idea:</span> <strong id="result-idea"></strong></p>
+      <p class="field"><span class="muted">What it was going for:</span> <span id="result-goal"></span></p>
+
+      <label>Do you want to keep this piece?</label>
+      <div class="row">
+        <button class="keep" data-decision="accept" disabled>Keep it</button>
+        <button class="discard" data-decision="reject" disabled>Discard it</button>
+        <button class="unsure" data-decision="unresolved" disabled>Not sure yet</button>
       </div>
-    </section>
+      <p class="field" id="decision-result"></p>
+      <p class="help" id="saved-line"></p>
+    </div>
+
+    <!-- How it was made (plain story, with optional full record) -->
+    <div class="card hidden" id="how">
+      <h2>How this was made</h2>
+      <p class="help">The studio doesn't just spit out an image. Separate roles each do one job, and an independent reviewer checks the result honestly — every step is recorded so nothing can be quietly changed.</p>
+      <ul class="story" id="story"></ul>
+      <div id="verified" class="verified"></div>
+      <button class="linkbtn" id="details-toggle">Show the full record ▾</button>
+      <div id="provenance" class="hidden"></div>
+    </div>
+
+    <!-- The studio so far -->
+    <div class="card">
+      <h2>Your studio so far</h2>
+      <div id="state"><p class="muted">No pieces yet. Make your first one above.</p></div>
+    </div>
   </main>
   <script src="/app.js"></script>
 </body>

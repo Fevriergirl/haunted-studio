@@ -18,6 +18,23 @@ import { runAblationExperiment } from './experiment/runner.js';
 import { recordMemoryCorrection } from './engine/memory-correction.js';
 import { recordMailboxConsumption } from './engine/mailbox-consumption.js';
 import { abandonCycle } from './engine/recovery.js';
+import { spawn } from 'node:child_process';
+
+// Best-effort: open the studio page in the user's default browser so launching is
+// a single step. Silently does nothing if no opener exists (e.g. a headless box)
+// or if HAUNTED_STUDIO_NO_OPEN is set. Only ever opens a local loopback URL.
+function openBrowser(url) {
+  if (process.env.HAUNTED_STUDIO_NO_OPEN) return;
+  const opener = process.platform === 'darwin' ? 'open'
+    : process.platform === 'win32' ? 'cmd'
+      : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  try {
+    const child = spawn(opener, args, { stdio: 'ignore', detached: true });
+    child.on('error', () => {}); // ignore: just means we couldn't auto-open
+    child.unref();
+  } catch { /* ignore: launching still works, the user opens the URL manually */ }
+}
 
 function parseArguments(argv) {
   const [command = 'run', ...tokens] = argv.slice(2);
@@ -287,7 +304,12 @@ async function main() {
     const port = Number(process.env.HAUNTED_STUDIO_PORT ?? 19830);
     const host = process.env.HAUNTED_STUDIO_HOST ?? '127.0.0.1';
     startStudioServer({ studio, mode, port, host });
-    console.log(`Haunted Studio interface on http://${host}:${port}/studio  (${mode.toUpperCase()} MODE)`);
+    const url = `http://${host}:${port}/studio`;
+    console.log('\n  Haunted Studio is open.\n');
+    console.log(`  Go to:  ${url}\n`);
+    console.log(`  Mode:   ${mode === 'image' ? 'Real images (uses your image AI key)' : 'Practice (free, no key needed)'}`);
+    console.log('  Stop:   press Ctrl-C in this window\n');
+    openBrowser(url); // best-effort; harmless if no browser is available
     return;
   }
 
