@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add ways to open the studio without the terminal: double-click launchers
+  (`Open Haunted Studio.command` for macOS/Linux, `Open Haunted Studio.bat` for
+  Windows) that start it and open the browser, and document the bookmarkable
+  local link `http://localhost:19830/studio`. The launchers do a one-time
+  `npm install` if needed and are otherwise a single click.
 - Rewrite the studio interface in plain language so anyone can understand and
   use it, and make launching one step. The page is now a single guided path —
   type an idea, choose Practice (free, no key) or Real image, press "Make art",
