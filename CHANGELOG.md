@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Add ways to open the studio without the terminal: double-click launchers
+  (`Open Haunted Studio.command` for macOS/Linux, `Open Haunted Studio.bat` for
+  Windows) that start it and open the browser, and document the bookmarkable
+  local link `http://localhost:19830/studio`. The launchers do a one-time
+  `npm install` if needed and are otherwise a single click.
+- Rewrite the studio interface in plain language so anyone can understand and
+  use it, and make launching one step. The page is now a single guided path —
+  type an idea, choose Practice (free, no key) or Real image, press "Make art",
+  see the piece, and "Keep it / Discard it / Not sure". The technical vocabulary
+  (intention, witness, canon, ledger, hashes) is replaced with everyday wording;
+  "How this was made" tells the story in friendly sentences, with the full
+  verified record kept behind a "Show the full record" toggle for the curious.
+  `npm run studio` now prints a clear banner and opens the page in the browser
+  automatically (set `HAUNTED_STUDIO_NO_OPEN=1` to disable; it only ever opens
+  the local loopback URL).
+- Make the studio interface show the whole process that makes this project
+  special, not just the finished artifact. A new "auditable process" panel
+  renders the role-separated trail behind each work — attention, artist, critics,
+  curator, the *blind* witness, the deviation comparator, and the adversarial
+  surprise reviewer — straight from the append-only ledger, with the frozen
+  intention commitment, the human decision, and any marked-not-erased canon
+  revocation called out. A badge verifies the hash chain (`✓ ledger verified · N
+  events · head …`) so the auditability is visible, not just asserted. Backed by
+  a thin `GET /api/cycle/:id/provenance` endpoint (the ledger as recorded, no new
+  logic) and refreshed after each cycle and decision.
 - Block cross-site requests to the studio's state-changing endpoints. A
   malicious page could otherwise issue a CORS "simple request" (e.g.
   `Content-Type: text/plain`, which the server still parses as JSON) to a

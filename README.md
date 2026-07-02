@@ -165,23 +165,32 @@ npm run report
 
 ## Studio interface (watch it make art)
 
-A thin, zero-dependency local interface for running one complete artist cycle and
-seeing the result. Defaults to a **mock** artifact provider, so it works without
-any API keys.
+A thin, zero-dependency local interface for turning an idea into one piece of art
+and seeing how it was made. Defaults to a **Practice** (mock) provider, so it
+works with no API key.
 
-```bash
-npm run studio        # open http://127.0.0.1:19830/studio
-```
+**Open it — pick whichever is easiest:**
 
-Enter a seed idea, click **Begin Cycle**, and the screen reveals the artist
-brief, the image prompt, the generated (mock) artifact, and a short reflection;
-then you accept, reject, or mark it unresolved and watch canon/memory update. A
-banner shows whether you are in **MOCK** or **IMAGE** mode.
+- **One click (no terminal):** double-click **`Open Haunted Studio.command`**
+  (macOS / Linux) or **`Open Haunted Studio.bat`** (Windows) in this folder. It
+  starts the studio and opens your browser. (One-time setup: install
+  [Node.js](https://nodejs.org), then run `npm install` once.)
+- **One command:** `npm run studio` — it prints a banner and opens the page for
+  you automatically.
+- **A link to bookmark:** while the studio is running, the page lives at
+  **http://localhost:19830/studio**. Bookmark it, or add it to your phone/desktop
+  home screen. (It only works while the studio is running on your computer — it
+  is local, not on the public internet.)
 
-The **Setup** panel runs everything from the browser: switch Mock/Image, paste an
-image API key (held **in server memory only** — never written to disk or returned),
-choose a model, and **Test connection** — no environment variables required. Run
-one cycle from the CLI instead:
+In the browser: type an idea, choose **Practice** (free, no key) or **Real
+image**, press **Make art**, then **Keep it / Discard it / Not sure**. A friendly
+**How this was made** section explains the role-separated, independently-reviewed
+process, with the full verified record behind a toggle.
+
+For real images, the page's **Real image** option takes an API key (held **in
+server memory only** — never written to disk or returned), a model, and a
+**Check it works** button — no environment variables required. Run one cycle from
+the CLI instead:
 
 ```bash
 node src/cli.js run --seed "a kitchen that quietly refuses to be entered"

@@ -159,6 +159,18 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
         });
         return sendJson(response, 200, summary);
       }
+      // Provenance: the ordered, role-labeled ledger events behind one cycle plus
+      // the hash-chain verification. This is the auditable trail that makes the
+      // project special — no business logic, just the ledger as recorded.
+      const provenanceMatch = url.pathname.match(/^\/api\/cycle\/([A-Za-z0-9._-]+)\/provenance$/);
+      if (request.method === 'GET' && provenanceMatch) {
+        await studio.initialize();
+        const all = await studio.ledger.readAll();
+        const events = all
+          .filter((event) => event.cycle_id === provenanceMatch[1])
+          .map(({ sequence, type, actor, hash, previous_hash, payload }) => ({ sequence, type, actor, hash, previous_hash, payload }));
+        return sendJson(response, 200, { cycle_id: provenanceMatch[1], events, verification: await studio.ledger.verify() });
+      }
       const decisionMatch = url.pathname.match(/^\/api\/cycle\/([A-Za-z0-9._-]+)\/decision$/);
       if (request.method === 'POST' && decisionMatch) {
         const body = await readBody(request);
