@@ -1,0 +1,30 @@
+# Deploy blueprint for Render (https://render.com) — gives the studio a real, password-protected URL.
+#
+# How to use (one time, in the Render dashboard):
+#   1. Sign up at render.com (free) and connect your GitHub account.
+#   2. Click New + -> Blueprint, pick this repository, and click Apply.
+#   3. When prompted, type a value for HAUNTED_STUDIO_ACCESS_PASSWORD —
+#      this is the password the site will ask for before anything loads.
+#   4. (Optional) Add your image API key later in the service's Environment tab
+#      as HAUNTED_STUDIO_IMAGE_API_KEY, or paste it in the studio page itself.
+#
+# Notes:
+#   - Practice (mock) mode works with no API key at all.
+#   - The free plan's disk is ephemeral: the studio ledger resets on redeploy or
+#     restart. Attach a persistent disk (paid) if the trajectory must survive.
+#   - The server refuses to start exposed without the password (see src/cli.js),
+#     and every request must pass HTTP Basic auth (see src/studio/server.js).
+services:
+  - type: web
+    name: haunted-studio
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run studio
+    envVars:
+      - key: HAUNTED_STUDIO_HOST
+        value: 0.0.0.0
+      - key: HAUNTED_STUDIO_NO_OPEN
+        value: "1"
+      - key: HAUNTED_STUDIO_ACCESS_PASSWORD
+        sync: false

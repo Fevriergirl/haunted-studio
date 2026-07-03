@@ -3,6 +3,7 @@
 // logic lives here.
 
 import http from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,15 +52,18 @@ async function sendFile(response, filePath, fallbackStatus = 200) {
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const DOT_ONLY = /^\.+$/;
 
-// Only accept requests whose Host header is a loopback name or the address the
-// server was deliberately bound to. This blocks DNS-rebinding (where a malicious
-// page resolves a domain to 127.0.0.1 but sends its own Host) and stops a
-// browser page from silently driving side-effecting endpoints on another host.
-function hostAllowed(hostHeader, boundHost) {
+// Only accept requests whose Host header is a loopback name, the address the
+// server was deliberately bound to, or (for password-protected deployments) the
+// explicitly configured public hostname. This blocks DNS-rebinding (where a
+// malicious page resolves a domain to 127.0.0.1 but sends its own Host) and
+// stops a browser page from silently driving side-effecting endpoints on
+// another host.
+function hostAllowed(hostHeader, boundHost, publicHost) {
   if (typeof hostHeader !== 'string' || !hostHeader) return false;
   const name = hostHeader.replace(/:\d+$/, '').toLowerCase();
   return name === '127.0.0.1' || name === 'localhost' || name === '::1' || name === '[::1]' ||
-    name === String(boundHost).toLowerCase();
+    name === String(boundHost).toLowerCase() ||
+    (typeof publicHost === 'string' && publicHost !== '' && name === publicHost.toLowerCase());
 }
 
 const DEFAULT_IMAGE_BASE_URL = 'https://api.openai.com/v1';
@@ -83,9 +87,34 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
   let imageKey = process.env.HAUNTED_STUDIO_IMAGE_API_KEY ?? null;
   const redact = (text) => (imageKey ? String(text).replaceAll(imageKey, '[redacted]') : String(text));
   const imageBaseUrl = () => (process.env.HAUNTED_STUDIO_IMAGE_BASE_URL ?? DEFAULT_IMAGE_BASE_URL).replace(/\/$/, '');
+  // Optional shared-password protection for deliberately exposed deployments.
+  // When HAUNTED_STUDIO_ACCESS_PASSWORD is set, every request must carry HTTP
+  // Basic credentials whose password matches (compared timing-safely on
+  // digests). Only then is an extra public hostname honored by the Host
+  // allow-list (HAUNTED_STUDIO_PUBLIC_HOST, or the hostname Render injects as
+  // RENDER_EXTERNAL_HOSTNAME). Without a password the server keeps its
+  // loopback-only posture; see SECURITY.md.
+  const accessPassword = process.env.HAUNTED_STUDIO_ACCESS_PASSWORD ?? null;
+  const publicHost = accessPassword
+    ? (process.env.HAUNTED_STUDIO_PUBLIC_HOST ?? process.env.RENDER_EXTERNAL_HOSTNAME ?? null)
+    : null;
+  const sha256 = (value) => createHash('sha256').update(String(value), 'utf8').digest();
+  const authorized = (request) => {
+    if (!accessPassword) return true;
+    const header = request.headers.authorization ?? '';
+    if (!header.startsWith('Basic ')) return false;
+    let decoded;
+    try { decoded = Buffer.from(header.slice(6), 'base64').toString('utf8'); } catch { return false; }
+    const password = decoded.slice(decoded.indexOf(':') + 1);
+    return timingSafeEqual(sha256(password), sha256(accessPassword));
+  };
   const server = http.createServer(async (request, response) => {
-    if (!hostAllowed(request.headers.host, host)) {
+    if (!hostAllowed(request.headers.host, host, publicHost)) {
       return sendJson(response, 403, { error: 'forbidden host' });
+    }
+    if (!authorized(request)) {
+      response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Haunted Studio"', 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return response.end(JSON.stringify({ error: 'authentication required' }));
     }
     // Block cross-site state changes before any side-effecting route runs.
     if (request.method !== 'GET' && request.method !== 'HEAD' && isCrossSiteRequest(request)) {
