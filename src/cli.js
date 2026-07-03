@@ -301,15 +301,21 @@ async function main() {
   if (parsed.command === 'studio') {
     await studio.initialize();
     const mode = process.env.HAUNTED_STUDIO_ARTIFACT === 'image' ? 'image' : 'mock';
-    const port = Number(process.env.HAUNTED_STUDIO_PORT ?? 19830);
+    // PORT is honored so platform hosts (e.g. Render) can inject their own port.
+    const port = Number(process.env.HAUNTED_STUDIO_PORT ?? process.env.PORT ?? 19830);
     const host = process.env.HAUNTED_STUDIO_HOST ?? '127.0.0.1';
+    const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+    if (!loopback && !process.env.HAUNTED_STUDIO_ACCESS_PASSWORD) {
+      throw new Error('Refusing to bind the studio to a non-loopback host without protection: set HAUNTED_STUDIO_ACCESS_PASSWORD for an exposed deployment, or unset HAUNTED_STUDIO_HOST.');
+    }
     startStudioServer({ studio, mode, port, host });
     const url = `http://${host}:${port}/studio`;
     console.log('\n  Haunted Studio is open.\n');
     console.log(`  Go to:  ${url}\n`);
     console.log(`  Mode:   ${mode === 'image' ? 'Real images (uses your image AI key)' : 'Practice (free, no key needed)'}`);
+    if (!loopback) console.log('  Access: password-protected (HAUNTED_STUDIO_ACCESS_PASSWORD)');
     console.log('  Stop:   press Ctrl-C in this window\n');
-    openBrowser(url); // best-effort; harmless if no browser is available
+    if (loopback) openBrowser(url); // best-effort; only ever auto-opens a local URL
     return;
   }
 
