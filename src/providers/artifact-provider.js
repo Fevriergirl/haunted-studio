@@ -1,7 +1,7 @@
 // Artifact provider adapter — the seam that keeps image-generation logic out of
 // the core engine. `mock` (default) produces a deterministic placeholder so the
 // app works fully offline; `image` reads credentials from the environment and
-// will call a real provider later.
+// calls a real provider (OpenAI-images-compatible, or Cloudflare Workers AI).
 
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -49,6 +49,8 @@ export class MockArtifactProvider {
 
 const IMAGE_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+const CF_FLUX_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+const CF_PROMPT_MAX = 2048; // FLUX schnell input limit.
 
 // The credentialed request must never go anywhere but https (loopback http is
 // allowed for local development), so the API key is never sent in cleartext.
@@ -100,21 +102,27 @@ async function readCapped(response, cap) {
   return Buffer.concat(chunks);
 }
 
-// Calls an OpenAI-images-compatible endpoint. Credentials come only from the
-// environment and are never logged, embedded in metadata, or returned in an
-// error — every outward message is redacted.
+// Calls a real image provider. Credentials come only from the environment and
+// are never logged, embedded in metadata, or returned in an error — every
+// outward message is redacted. Two provider shapes are supported:
+//   - openai      (default): POST {base}/images/generations, read b64_json|url.
+//   - cloudflare            : Cloudflare Workers AI FLUX (free tier), read result.image.
 export class ImageArtifactProvider {
   constructor(env = process.env, fetchImpl = globalThis.fetch) {
+    this.provider = (env.HAUNTED_STUDIO_IMAGE_PROVIDER ?? 'openai').toLowerCase();
     this.apiKey = env.HAUNTED_STUDIO_IMAGE_API_KEY ?? null;
     this.baseUrl = (env.HAUNTED_STUDIO_IMAGE_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
-    this.model = env.HAUNTED_STUDIO_IMAGE_MODEL ?? 'gpt-image-2';
+    this.model = env.HAUNTED_STUDIO_IMAGE_MODEL ?? (this.provider === 'cloudflare' ? CF_FLUX_MODEL : 'gpt-image-2');
     this.size = env.HAUNTED_STUDIO_IMAGE_SIZE ?? '1024x1024';
+    this.cfAccountId = env.HAUNTED_STUDIO_CF_ACCOUNT_ID ?? null;
     this.maxBytes = Number(env.HAUNTED_STUDIO_IMAGE_MAX_BYTES) || MAX_IMAGE_BYTES;
     this.fetchImpl = fetchImpl;
   }
 
   get mode() { return 'image'; }
-  get fileExtension() { return 'png'; }
+  // FLUX returns JPEG; OpenAI-images returns PNG. Name the file honestly so the
+  // static host serves the right Content-Type.
+  get fileExtension() { return this.provider === 'cloudflare' ? 'jpg' : 'png'; }
 
   redact(text) {
     return this.apiKey ? String(text).replaceAll(this.apiKey, '[redacted]') : String(text);
@@ -124,6 +132,47 @@ export class ImageArtifactProvider {
     if (!this.apiKey) {
       throw new Error('HAUNTED_STUDIO_IMAGE_API_KEY is required for image mode; run in mock mode to work without keys.');
     }
+    const bytes = this.provider === 'cloudflare'
+      ? await this.generateCloudflare(prompt)
+      : await this.generateOpenAI(prompt);
+    await ensureDir(path.dirname(outputPath));
+    await writeFile(outputPath, bytes);
+    return outputPath;
+  }
+
+  // Cloudflare Workers AI FLUX. The account id is public (not a secret); the API
+  // token is the credential and is redacted from every outward message.
+  async generateCloudflare(prompt) {
+    if (!this.cfAccountId) {
+      throw new Error('HAUNTED_STUDIO_CF_ACCOUNT_ID is required for the cloudflare image provider.');
+    }
+    const model = /^@cf\//.test(this.model) ? this.model : CF_FLUX_MODEL;
+    const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(this.cfAccountId)}/ai/run/${model}`;
+    let response;
+    try {
+      response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+        body: JSON.stringify({ prompt: String(prompt).slice(0, CF_PROMPT_MAX), steps: 4 })
+      });
+    } catch (error) {
+      throw new Error(this.redact(`Cloudflare image request failed: ${error.message}`));
+    }
+    if (!response.ok) {
+      throw new Error(`Cloudflare image provider returned ${response.status}: ${this.redact((await response.text()).slice(0, 500))}`);
+    }
+    const result = await response.json();
+    const b64 = result?.result?.image;
+    if (typeof b64 !== 'string') {
+      throw new Error('Cloudflare image response did not contain image data (no result.image).');
+    }
+    const buffer = Buffer.from(b64, 'base64');
+    if (buffer.length > this.maxBytes) throw new Error('Image exceeds the size cap.');
+    return buffer;
+  }
+
+  async generateOpenAI(prompt) {
     assertSafeRequestUrl(this.baseUrl);
     // `output_format` is a gpt-image parameter; dall-e-style models reject it, so
     // only send it when the model is a gpt-image one. Other models default to a
@@ -142,24 +191,20 @@ export class ImageArtifactProvider {
       throw new Error(this.redact(`Image provider request failed: ${error.message}`));
     }
     if (!response.ok) {
-      const body = this.redact((await response.text()).slice(0, 500));
-      throw new Error(`Image provider returned ${response.status}: ${body}`);
+      const errBody = this.redact((await response.text()).slice(0, 500));
+      throw new Error(`Image provider returned ${response.status}: ${errBody}`);
     }
     const result = await response.json();
     const datum = result?.data?.[0] ?? {};
-    let bytes;
     if (typeof datum.b64_json === 'string') {
-      bytes = Buffer.from(datum.b64_json, 'base64');
-    } else if (typeof datum.url === 'string') {
+      return Buffer.from(datum.b64_json, 'base64');
+    }
+    if (typeof datum.url === 'string') {
       // Some endpoints (e.g. dall-e, several compatible providers) return a URL
       // instead of base64. Follow it, but only over https and within a size cap.
-      bytes = await this.downloadImage(datum.url);
-    } else {
-      throw new Error('Image provider response did not contain image data (no b64_json or url).');
+      return this.downloadImage(datum.url);
     }
-    await ensureDir(path.dirname(outputPath));
-    await writeFile(outputPath, bytes);
-    return outputPath;
+    throw new Error('Image provider response did not contain image data (no b64_json or url).');
   }
 
   async downloadImage(rawUrl) {
