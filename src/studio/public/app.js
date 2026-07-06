@@ -80,6 +80,31 @@ function showError(message) {
   $('error').textContent = text;
 }
 
+function newOperationId() {
+  return `studio-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Live progress: open the step stream before the cycle starts, so every role's
+// step appears in "How this was made" as it actually happens instead of only
+// after the whole cycle finishes.
+function watchCycleLive(operationId) {
+  $('how').classList.remove('hidden');
+  $('how-title').textContent = 'Making it — live';
+  $('live-dot').classList.remove('hidden');
+  $('verified').textContent = '';
+  $('provenance').innerHTML = '';
+  const liveEvents = [];
+  renderStory(liveEvents);
+  let source;
+  try { source = new EventSource(`/api/cycle/stream?operation_id=${encodeURIComponent(operationId)}`); }
+  catch { return { close() {} }; }
+  source.onmessage = (message) => {
+    try { liveEvents.push(JSON.parse(message.data)); renderStory(liveEvents); } catch { /* ignore malformed line */ }
+  };
+  source.onerror = () => { /* best-effort: the final loadProcess() below is authoritative */ };
+  return { close: () => source.close() };
+}
+
 async function beginCycle() {
   $('error').textContent = '';
   const seed = $('seed').value.trim();
@@ -88,8 +113,10 @@ async function beginCycle() {
   $('begin').textContent = 'Making…';
   decisionButtons(false);
   $('decision-result').textContent = '';
-  const body = { seed, mode: currentMode };
+  const operationId = newOperationId();
+  const body = { seed, mode: currentMode, operation_id: operationId };
   if (currentMode === 'image' && $('image-model').value.trim()) body.model = $('image-model').value.trim();
+  const live = watchCycleLive(operationId);
   try {
     const cycle = await api('POST', '/api/cycle', body);
     currentCycleId = cycle.cycle_id;
@@ -109,7 +136,10 @@ async function beginCycle() {
     await loadProcess(currentCycleId);
   } catch (error) {
     showError(error.message);
+    $('how-title').textContent = 'How this was made';
+    $('live-dot').classList.add('hidden');
   } finally {
+    live.close();
     $('begin').disabled = false;
     $('begin').textContent = 'Make art';
   }
@@ -215,6 +245,8 @@ async function loadProcess(cycleId) {
     const data = await api('GET', `/api/cycle/${cycleId}/provenance`);
     if (!Array.isArray(data.events) || data.events.length === 0) return;
     $('how').classList.remove('hidden');
+    $('how-title').textContent = 'How this was made';
+    $('live-dot').classList.add('hidden');
     renderStory(data.events);
     renderProvenance(data.events);
     const v = data.verification ?? {};

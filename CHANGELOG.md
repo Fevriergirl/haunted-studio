@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Make the live action visible. The studio interface now streams each role's
+  step (attention, artist, critics, curator, blind witness, deviation
+  comparator, adversarial reviewer, memory) into "How this was made" as the
+  cycle actually runs, instead of only after it finishes — a pulsing "live"
+  indicator marks it in progress. Backed by a new `GET /api/cycle/stream`
+  endpoint that polls the append-only ledger for one operation and closes the
+  connection once the cycle's terminal event is written; no new state, and the
+  existing synchronous `POST /api/cycle` response remains the authoritative
+  source once the run completes. The public exhibition now shows the same
+  thing for every finished work: a "See every recorded step, in order" trail
+  with the complete ledger, not just the six curated highlights.
 - Add ways to open the studio without the terminal: double-click launchers
   (`Open Haunted Studio.command` for macOS/Linux, `Open Haunted Studio.bat` for
   Windows) that start it and open the browser, and document the bookmarkable

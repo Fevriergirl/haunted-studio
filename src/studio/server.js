@@ -8,8 +8,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { id } from '../core/ids.js';
+import { terminalEventForCycle } from '../core/event-contract.js';
 import { beginStudioCycle } from '../engine/studio-cycle.js';
 import { recordArtifactDecision } from '../engine/studio-decision.js';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const STREAM_POLL_MS = 200;
+const STREAM_MAX_MS = 5 * 60_000;
 
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 const MAX_BODY_BYTES = 1_000_000;
@@ -187,6 +192,45 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
           operationId: body.operation_id ?? id('studio-cycle'), env
         });
         return sendJson(response, 200, summary);
+      }
+      // Live progress: streams the same ledger events the provenance endpoint
+      // reports, as they are appended, so the browser can show each role's step
+      // while a cycle is still running instead of only after it completes. Pure
+      // read of the append-only ledger — no new state, no business logic.
+      if (request.method === 'GET' && url.pathname === '/api/cycle/stream') {
+        const operationId = url.searchParams.get('operation_id');
+        if (!operationId) return sendJson(response, 400, { error: 'operation_id is required' });
+        response.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-store',
+          Connection: 'keep-alive',
+          'X-Content-Type-Options': 'nosniff'
+        });
+        response.write(':connected\n\n');
+        let closed = false;
+        request.on('close', () => { closed = true; });
+        let cycleId = null;
+        let lastSequence = 0;
+        const deadline = Date.now() + STREAM_MAX_MS;
+        while (!closed && Date.now() < deadline) {
+          const events = await studio.ledger.readAll();
+          if (!cycleId) {
+            const started = events.find((event) => event.type === 'cycle_started' && event.payload?.operation_id === operationId);
+            if (started) cycleId = started.cycle_id;
+          }
+          if (cycleId) {
+            const cycleEvents = events.filter((event) => event.cycle_id === cycleId && event.sequence > lastSequence);
+            for (const event of cycleEvents) {
+              lastSequence = event.sequence;
+              const { sequence, type, actor, hash, previous_hash, payload } = event;
+              if (!closed) response.write(`data: ${JSON.stringify({ sequence, type, actor, hash, previous_hash, payload })}\n\n`);
+            }
+            if (terminalEventForCycle(events, cycleId)) break;
+          }
+          if (!closed) await sleep(STREAM_POLL_MS);
+        }
+        if (!closed) response.end();
+        return;
       }
       // Provenance: the ordered, role-labeled ledger events behind one cycle plus
       // the hash-chain verification. This is the auditable trail that makes the

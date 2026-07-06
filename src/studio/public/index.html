@@ -49,6 +49,8 @@
     .story { list-style: none; margin: 8px 0 0; padding: 0; }
     .story li { padding: 4px 0 4px 22px; position: relative; font-size: 14px; color: #d4d4da; }
     .story li::before { content: '✓'; position: absolute; left: 0; color: #7ee2a8; font-size: 12px; }
+    .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff8a8a; vertical-align: middle; animation: live-pulse 1.1s ease-in-out infinite; }
+    @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
     .verified { font-size: 13px; color: #7ee2a8; margin-top: 10px; }
     .verified.bad { color: #ff8a8a; }
     .linkbtn { background: none; border: none; color: #9aa6ff; padding: 6px 0; cursor: pointer; font-size: 13px; }
@@ -127,7 +129,7 @@
 
     <!-- How it was made (plain story, with optional full record) -->
     <div class="card hidden" id="how">
-      <h2>How this was made</h2>
+      <h2><span id="how-title">How this was made</span> <span id="live-dot" class="live-dot hidden" title="updating live"></span></h2>
       <p class="help">The studio doesn't just spit out an image. Separate roles each do one job, and an independent reviewer checks the result honestly — every step is recorded so nothing can be quietly changed.</p>
       <ul class="story" id="story"></ul>
       <div id="verified" class="verified"></div>

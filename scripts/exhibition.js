@@ -88,6 +88,51 @@ const CAST = [
   }
 ];
 
+// One short label per ledger event type, and which cast member acted, so the
+// full recorded process — not just the six curated highlights above — can be
+// shown per work: the same live, role-separated action visible in the studio.
+const STEP_LABEL = {
+  cycle_started: 'Began the cycle.',
+  observation_selected: 'Noticed this observation.',
+  intention_locked: 'Locked the intention before making anything.',
+  candidates_generated: 'Sketched several candidate directions.',
+  critics_reported: 'Critiqued every candidate.',
+  candidate_revised: 'Reworked the strongest candidate.',
+  revision_critiqued: 'Critiqued the reworked candidate.',
+  curation_decided: 'Decided which candidate to make.',
+  curation_overridden_by_condition: 'An experimental condition overrode the curator.',
+  artifact_generated: 'Generated the image file.',
+  artifact_witnessed: 'A blind witness described the result without seeing the plan.',
+  artifact_deviations_compared: 'Compared the result against the locked plan.',
+  surprise_reviewed: 'Put any claimed surprise through adversarial cross-examination.',
+  artifact_audited: 'Audited the finished image for quality.',
+  artifact_audit_not_passed: 'The audit did not clear the canon threshold.',
+  post_result_evidence_unavailable: 'No artifact was made, so no post-result evidence applies.',
+  audience_predicted: 'Predicted how an audience might meet the work.',
+  memory_consolidated: 'Folded what it learned into memory.',
+  cycle_completed: 'Sealed the whole record in the ledger.'
+};
+
+const ACTOR_CAST_ID = {
+  'role:attention': 'attention', 'role:artist': 'artist', 'role:editor': 'artist',
+  'role:critics': 'critic', 'role:curator': 'curator', 'experiment-orchestrator': 'curator',
+  'role:artifact-witness': 'witness', 'role:deviation-comparator': 'witness',
+  'role:adversarial-surprise-reviewer': 'adjudicator', 'visual-critic': 'curator',
+  'role:audience-prediction': 'audience', 'orchestrator': 'ledger', 'image-provider': 'ledger'
+};
+
+function stepList(events) {
+  if (!events.length) return '';
+  const items = events.map((event) => {
+    const label = STEP_LABEL[event.type] ?? event.type.replace(/_/g, ' ');
+    return `<li>${glyph(ACTOR_CAST_ID[event.actor])} ${esc(label)} <span class="stephash">#${event.sequence}</span></li>`;
+  }).join('');
+  return `<details class="livetrail">
+    <summary>See every recorded step, in order — the full process</summary>
+    <ol class="steps">${items}</ol>
+  </details>`;
+}
+
 function esc(value) {
   return String(value ?? '—').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 }
@@ -175,6 +220,7 @@ function card(cycle, index, eventsByCycle) {
           <dt>${glyph('adjudicator')} Constraints in force</dt><dd>role separation; locked intention (hashed before creation); independent criticism; one revision maximum; append-only memory</dd>
           <dt>${glyph('ledger')} Permanent record</dt><dd>${(meta?.ledger_event_ids ?? []).length} ledger events, hash-chained; see <code>metadata.json</code> in the repository run data</dd>
         </dl>
+        ${stepList(eventsByCycle.get(cycle.cycle_id) ?? [])}
       </details>
       <p class="react">${glyph('audience')} <a href="${REPO}/issues/new?title=${reactTitle}&labels=audience-review">React to this work →</a>
       Reactions can be recorded into the studio's permanent memory as consented human reviews — they become part of what the artist faces next.</p>
@@ -231,6 +277,11 @@ function page({ cycles, verification, state, eventsByCycle }) {
   dl { margin: 10px 0 0; font-size: 15px; }
   dt { color: #8f8b83; margin-top: 8px; }
   dd { margin: 0; }
+  .livetrail { margin-top: 14px; }
+  .livetrail summary { font-size: 14px; }
+  .steps { margin: 10px 0 0; padding-left: 20px; font-size: 14.5px; color: #cfccc5; }
+  .steps li { margin: 4px 0; }
+  .stephash { color: #6f6b64; font-size: 12px; }
   .react { margin-top: 12px; font-size: 15px; color: #b9b5ac; }
   a { color: #9fb4c7; }
   .proof { background: #17161a; border: 1px solid #2c2b31; padding: 18px; margin-top: 40px; scroll-margin-top: 70px; }
