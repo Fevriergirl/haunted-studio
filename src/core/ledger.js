@@ -43,6 +43,24 @@ async function serializeAppend(filePath, operation) {
 export class AppendOnlyLedger {
   constructor(filePath) {
     this.filePath = filePath;
+    this.listeners = new Set();
+  }
+
+  // Observe appends as they happen (e.g. to stream a running cycle live).
+  // Listeners are read-only observers: they receive the event exactly as
+  // persisted, after it is on disk, and a throwing listener cannot fail or
+  // reorder an append. Idempotent replays notify nobody — only genuinely new
+  // history is announced. Returns an unsubscribe function.
+  subscribe(listener) {
+    if (typeof listener !== 'function') throw new Error('Ledger listener must be a function.');
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  #notify(event) {
+    for (const listener of this.listeners) {
+      try { listener(event); } catch { /* observers must never break the ledger */ }
+    }
   }
 
   async readAll() {
@@ -104,6 +122,7 @@ export class AppendOnlyLedger {
       const event = { ...unsigned, hash: sha256(canonicalize(unsigned)) };
       await ensureDir(path.dirname(this.filePath));
       await appendFile(this.filePath, `${JSON.stringify(event)}\n`, 'utf8');
+      this.#notify(event);
       return event;
     });
   }

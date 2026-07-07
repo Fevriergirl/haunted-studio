@@ -187,6 +187,14 @@ image**, press **Make art**, then **Keep it / Discard it / Not sure**. A friendl
 **How this was made** section explains the role-separated, independently-reviewed
 process, with the full verified record behind a toggle.
 
+While a cycle runs, a **Watch it work** panel shows the studio working live:
+every ledger append (attention, locked intention, candidates, critics, curator,
+the blind witness, the reviewers, memory) streams to the page the instant it is
+persisted, via `GET /api/live` (Server-Sent Events, relaying persisted ledger
+events verbatim — no new logic). The panel also picks up cycles started from the
+terminal. CLI runs print the same live record line by line as steps are
+persisted; set `HAUNTED_STUDIO_QUIET=1` to suppress.
+
 For real images, the page's **Real image** option takes an API key (held **in
 server memory only** — never written to disk or returned), a model, and a
 **Check it works** button — no environment variables required. Run one cycle from

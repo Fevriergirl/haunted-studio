@@ -62,6 +62,18 @@ function parseArguments(argv) {
   return { command, flags, values, positionals };
 }
 
+// Echo every ledger append to the terminal the moment it is persisted, so a
+// cycle shows itself working step by step instead of going silent until the
+// summary. Set HAUNTED_STUDIO_QUIET to suppress. Returns an unsubscribe.
+function watchLedgerLive(studio) {
+  if (process.env.HAUNTED_STUDIO_QUIET) return () => {};
+  console.log('\nLive record (each line is written the instant the step is persisted):');
+  return studio.ledger.subscribe((event) => {
+    const role = String(event.actor ?? 'step').replace(/^role:/, '');
+    console.log(`  #${String(event.sequence).padStart(3, ' ')}  ${role.padEnd(22, ' ')} ${event.type.replace(/_/g, ' ')}`);
+  });
+}
+
 function printCycle(result) {
   console.log(`\nCycle: ${result.cycleId}`);
   console.log(`Observation: ${result.attention.observation.text}`);
@@ -92,6 +104,7 @@ async function main() {
 
   if (parsed.command === 'run' && parsed.values.seed) {
     // One-shot studio art cycle from a seed idea (mock artifact by default).
+    watchLedgerLive(studio);
     await studio.initialize();
     const mode = process.env.HAUNTED_STUDIO_ARTIFACT === 'image' ? 'image' : 'mock';
     const summary = await beginStudioCycle({
@@ -116,6 +129,7 @@ async function main() {
 
   if (parsed.command === 'run') {
     const provider = createProvider();
+    watchLedgerLive(studio);
     const mailbox = new JsonlMailbox(path.join(config.studioRoot, 'mailbox.jsonl'));
     const mailboxLimit = Number(parsed.values.limit ?? 20);
     if (parsed.flags.has('mailbox') && (!Number.isInteger(mailboxLimit) || mailboxLimit < 1 || mailboxLimit > 100)) {

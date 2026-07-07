@@ -167,6 +167,30 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
         if (res.ok) return sendJson(response, 200, { ok: true });
         return sendJson(response, 200, { ok: false, status: res.status, error: redact((await res.text()).slice(0, 300)) });
       }
+      // Live view: a Server-Sent-Events stream of ledger appends, so the page
+      // (or curl) can watch the studio work step by step while a cycle runs.
+      // Pure observation — events are relayed exactly as the ledger persisted
+      // them, the same shape the provenance endpoint returns after the fact.
+      if (request.method === 'GET' && url.pathname === '/api/live') {
+        await studio.initialize();
+        response.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-store',
+          Connection: 'keep-alive',
+          'X-Content-Type-Options': 'nosniff'
+        });
+        response.write('retry: 2000\n\n');
+        const send = (event) => {
+          response.write(`data: ${redact(JSON.stringify(event))}\n\n`);
+        };
+        const unsubscribe = studio.ledger.subscribe(send);
+        // Comment-only heartbeat keeps proxies from idling the stream out;
+        // unref'd so an open stream never pins the process alive on its own.
+        const heartbeat = setInterval(() => response.write(': keep-alive\n\n'), 15_000);
+        heartbeat.unref?.();
+        request.on('close', () => { clearInterval(heartbeat); unsubscribe(); });
+        return;
+      }
       if (request.method === 'GET' && url.pathname === '/api/state') {
         await studio.initialize();
         return sendJson(response, 200, await studio.getState());
