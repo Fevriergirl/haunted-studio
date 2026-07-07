@@ -239,9 +239,74 @@ const LIVE_LINES = {
   cycle_failed: 'The cycle stopped with an error (recorded, never hidden).'
 };
 
+// The cast strip: every role as a stage light, in the order a cycle visits
+// them. Each actor maps to one light; the light comes on when its role works.
+const CAST = [
+  { key: 'attention', name: 'Attention', color: '#6ec8ff', actors: ['role:attention'] },
+  { key: 'artist', name: 'Artist', color: '#b48cff', actors: ['role:artist', 'role:editor'] },
+  { key: 'critics', name: 'Critics', color: '#ff9d6e', actors: ['role:critics'] },
+  { key: 'curator', name: 'Curator', color: '#7ee2a8', actors: ['role:curator', 'experiment-orchestrator'] },
+  { key: 'image', name: 'Image', color: '#f0d97e', actors: ['image-provider'] },
+  { key: 'witness', name: 'Witness', color: '#8fb8ff', actors: ['role:artifact-witness'] },
+  { key: 'comparator', name: 'Comparator', color: '#6ee2d8', actors: ['role:deviation-comparator'] },
+  { key: 'reviewer', name: 'Reviewer', color: '#ff8a8a', actors: ['role:adversarial-surprise-reviewer', 'visual-critic'] },
+  { key: 'audience', name: 'Audience', color: '#f0a6c4', actors: ['role:audience-prediction'] },
+  { key: 'memory', name: 'Memory', color: '#e2c07e', actors: ['role:memory'] }
+];
+const CAST_BY_ACTOR = new Map(CAST.flatMap((node) => node.actors.map((actor) => [actor, node])));
+
+function roleColor(actor) {
+  return CAST_BY_ACTOR.get(actor)?.color ?? '#9aa6ff';
+}
+
+function renderCast() {
+  $('cast').innerHTML = CAST.map((node) =>
+    `<div class="cast-node" data-cast="${node.key}" style="--role-color:${node.color}">`
+    + '<span class="cast-dot"></span>'
+    + `<span class="cast-name">${escapeHtml(node.name)}</span></div>`
+  ).join('');
+}
+
+function lightCast(actor) {
+  const node = CAST_BY_ACTOR.get(actor);
+  document.querySelectorAll('.cast-node.now').forEach((el) => { el.classList.remove('now'); el.classList.add('done'); });
+  if (!node) return;
+  const el = document.querySelector(`.cast-node[data-cast="${node.key}"]`);
+  if (el) { el.classList.remove('done'); el.classList.add('now'); }
+}
+
+function settleCast() {
+  document.querySelectorAll('.cast-node.now').forEach((el) => { el.classList.remove('now'); el.classList.add('done'); });
+}
+
 function clip(text, max = 90) {
   const s = String(text ?? '').trim();
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+// The role's actual words for this step — the story, quoted from the record.
+function liveQuote(event) {
+  const p = event.payload ?? {};
+  switch (event.type) {
+    case 'observation_selected': return clip(p.reasons?.[0], 160);
+    case 'intention_locked': return clip(p.necessity?.statement, 200);
+    case 'candidates_generated': return clip((p.candidates ?? []).map((c) => c.title).filter(Boolean).join('  ·  '), 200);
+    case 'critics_reported': return clip(p.critiques?.[0]?.strongest_objection, 200);
+    case 'candidate_revised': return clip(p.revised_candidate?.revision_reason, 200);
+    case 'curation_decided':
+    case 'curation_overridden_by_condition':
+      return clip(p.rationale, 200);
+    case 'artifact_witnessed': return clip(p.observations?.[0]?.description, 200);
+    case 'artifact_deviations_compared': return clip(p.comparisons?.[0]?.description, 200);
+    case 'surprise_reviewed': return (p.reviewed_evidence ?? []).some((item) => item.review_status === 'confirmed')
+      ? clip(p.reviewed_evidence.find((item) => item.review_status === 'confirmed')?.description, 200)
+      : 'No claimed surprise survived adversarial review — flukes are not kept as achievements.';
+    case 'artifact_audited': return clip(p.observations?.[0], 200);
+    case 'audience_predicted': return clip(p.likely_misreading, 200);
+    case 'memory_consolidated': return clip(p.lesson, 200);
+    case 'cycle_failed': return clip(p.message, 200);
+    default: return '';
+  }
 }
 
 // One small, human peek into each step's payload.
@@ -249,7 +314,7 @@ function liveDetail(event) {
   const p = event.payload ?? {};
   switch (event.type) {
     case 'observation_selected': return clip(p.observation?.text);
-    case 'intention_locked': return clip(p.necessity?.statement ?? p.intention?.statement);
+    case 'intention_locked': return clip(p.intention?.about);
     case 'candidates_generated': return `${(p.candidates ?? []).length} directions`;
     case 'critics_reported': return `${(p.critiques ?? []).length} critiques`;
     case 'candidate_revised': return clip(p.revised_candidate?.title);
@@ -278,14 +343,18 @@ function setLiveStatus(kind, text) {
 function appendLiveStep(event) {
   const line = STORY_LINES[event.type] ?? LIVE_LINES[event.type] ?? event.type.replace(/_/g, ' ');
   const detail = liveDetail(event);
+  const quote = liveQuote(event);
   const time = (() => { try { return new Date(event.timestamp).toLocaleTimeString(); } catch { return ''; } })();
   const item = document.createElement('li');
   item.className = 'live-step current';
-  item.innerHTML = `<span class="live-role">${escapeHtml(roleLabel(event.actor))}</span>`
+  item.style.setProperty('--role-color', roleColor(event.actor));
+  item.innerHTML = '<div class="live-head">'
+    + `<span class="live-role">${escapeHtml(roleLabel(event.actor))}</span>`
     + `<span><span class="live-line">${escapeHtml(line)}</span>`
     + (detail ? ` <span class="live-detail">— ${escapeHtml(detail)}</span>` : '')
     + '</span>'
-    + `<span class="live-time">${escapeHtml(time)}</span>`;
+    + `<span class="live-time">${escapeHtml(time)}</span></div>`
+    + (quote ? `<div class="live-quote">“${escapeHtml(quote)}”</div>` : '');
   const list = $('live-steps');
   list.querySelectorAll('.current').forEach((el) => el.classList.remove('current'));
   list.appendChild(item);
@@ -294,13 +363,16 @@ function appendLiveStep(event) {
 function handleLiveEvent(event) {
   if (!event || typeof event.type !== 'string') return;
   $('live').classList.remove('hidden');
+  if (!$('cast').childElementCount) renderCast(); // joined mid-cycle: still show the cast
   if (event.type === 'cycle_started') {
     $('live-steps').innerHTML = '';
+    renderCast();
     setLiveStatus('working', 'The studio is working…');
   }
+  lightCast(event.actor);
   appendLiveStep(event);
-  if (event.type === 'cycle_completed') setLiveStatus('', 'Finished — every step above is in the permanent record.');
-  if (event.type === 'cycle_failed') setLiveStatus('failed', 'The cycle failed. The failure itself was recorded.');
+  if (event.type === 'cycle_completed') { settleCast(); setLiveStatus('', 'Finished — every step above is in the permanent record.'); }
+  if (event.type === 'cycle_failed') { settleCast(); setLiveStatus('failed', 'The cycle failed. The failure itself was recorded.'); }
 }
 
 function connectLive() {

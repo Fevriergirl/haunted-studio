@@ -70,15 +70,26 @@
     #live-status.failed { color: #ff8a8a; }
     #live-status.failed .dot { background: #ff8a8a; }
     @keyframes live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
+    /* the cast: every role as a stage light that comes on when it works */
+    .cast { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 8px; margin: 12px 0 2px; padding: 10px 12px; background: #101017; border: 1px solid #1d1d24; border-radius: 10px; }
+    .cast-node { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 0 1 auto; }
+    .cast-node .cast-dot { width: 10px; height: 10px; border-radius: 50%; background: #26262e; border: 1px solid #34343f; transition: background 0.3s, box-shadow 0.3s; }
+    .cast-node .cast-name { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #55555f; transition: color 0.3s; }
+    .cast-node.done .cast-dot { background: var(--role-color, #9aa6ff); border-color: var(--role-color, #9aa6ff); }
+    .cast-node.done .cast-name { color: var(--role-color, #9aa6ff); }
+    .cast-node.now .cast-dot { background: var(--role-color, #9aa6ff); border-color: var(--role-color, #9aa6ff); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--role-color, #9aa6ff) 55%, transparent); animation: live-pulse 0.9s ease-in-out infinite; }
     .live-steps { list-style: none; margin: 10px 0 0; padding: 0; }
-    .live-step { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; border-top: 1px solid #1d1d24; font-size: 13px; animation: live-in 0.25s ease-out; }
+    .live-step { padding: 7px 0; border-top: 1px solid #1d1d24; font-size: 13px; animation: live-in 0.25s ease-out; --role-color: #9aa6ff; }
     .live-step:first-child { border-top: none; }
     @keyframes live-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-    .live-step .live-role { flex: none; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: #9a9aa6; border: 1px solid #34343f; border-radius: 999px; padding: 1px 7px; min-width: 74px; text-align: center; }
+    .live-step .live-head { display: flex; align-items: baseline; gap: 8px; }
+    .live-step .live-role { flex: none; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--role-color); border: 1px solid color-mix(in srgb, var(--role-color) 45%, #34343f); border-radius: 999px; padding: 1px 7px; min-width: 74px; text-align: center; }
     .live-step .live-line { color: #e7e7ea; }
     .live-step .live-detail { color: #7a7a86; font-size: 12px; }
     .live-step .live-time { margin-left: auto; flex: none; color: #55555f; font-size: 11px; font-variant-numeric: tabular-nums; }
-    .live-step.current .live-role { border-color: #4a5cf0; color: #9aa6ff; }
+    .live-step .live-quote { margin: 5px 0 0 82px; padding-left: 10px; border-left: 2px solid color-mix(in srgb, var(--role-color) 55%, transparent); color: #b9b9c6; font-style: italic; font-size: 12.5px; line-height: 1.5; }
+    .live-step.current .live-role { box-shadow: 0 0 8px 0 color-mix(in srgb, var(--role-color) 40%, transparent); }
+    @media (max-width: 560px) { .live-step .live-quote { margin-left: 0; } }
   </style>
 </head>
 <body>
@@ -128,8 +139,9 @@
     <!-- Step 2: the studio working, streamed live from the ledger -->
     <div class="card hidden" id="live">
       <h2>2 · Watch it work</h2>
-      <p class="help">Each role reports here the instant its step is written to the tamper-evident record — this is the studio actually working, not a replay.</p>
+      <p class="help">Each role reports here the instant its step is written to the tamper-evident record — this is the studio actually working, not a replay. The lights below are the cast; each comes on as that role does its part.</p>
       <div id="live-status"><span class="dot"></span><span id="live-status-text">Waiting…</span></div>
+      <div class="cast" id="cast"></div>
       <ul class="live-steps" id="live-steps"></ul>
     </div>
 
