@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Show the program working live. The append-only ledger now accepts read-only
+  subscribers (`ledger.subscribe(listener)`), notified with each event exactly
+  as persisted — never on idempotent replays, and a throwing listener cannot
+  break an append. The studio server streams those appends over a new
+  `GET /api/live` Server-Sent-Events endpoint (persisted ledger events relayed
+  verbatim; same host/auth/redaction posture as the other routes), and the
+  studio page gains a "Watch it work" panel that fills in role by role — with a
+  one-line payload peek per step — while a cycle runs, including cycles started
+  from the terminal. `node src/cli.js run` prints the same live record line by
+  line as steps are persisted (`HAUNTED_STUDIO_QUIET=1` suppresses it).
 - Add ways to open the studio without the terminal: double-click launchers
   (`Open Haunted Studio.command` for macOS/Linux, `Open Haunted Studio.bat` for
   Windows) that start it and open the browser, and document the bookmarkable

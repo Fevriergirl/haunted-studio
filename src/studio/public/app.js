@@ -155,6 +155,7 @@ function renderState(state) {
 
 // One friendly sentence per meaningful step, in the order they happened.
 const STORY_LINES = {
+  cycle_started: 'Opened a new cycle.',
   observation_selected: 'Looked closely at your idea.',
   intention_locked: 'Decided what it was trying to do — and locked that in, so the result can be judged honestly.',
   candidates_generated: 'Sketched a few different directions.',
@@ -166,6 +167,7 @@ const STORY_LINES = {
   artifact_deviations_compared: 'Compared the result against the original plan.',
   surprise_reviewed: 'Checked whether anything surprising was genuinely good or just a fluke.',
   artifact_audited: 'Reviewed the finished picture for quality.',
+  audience_predicted: 'Predicted what a viewer would notice, and might misread.',
   memory_consolidated: 'Remembered what it learned for next time.',
   cycle_completed: 'Finished and saved the whole record.',
   artifact_decision_recorded: 'Recorded your decision.',
@@ -224,6 +226,93 @@ async function loadProcess(cycleId) {
   } catch { /* ignore */ }
 }
 
+// --- Live view: the studio showing itself work in real time ---------------
+//
+// /api/live streams every ledger append the moment it is persisted, so this
+// panel fills in step by step WHILE a cycle runs — including cycles started
+// from the terminal, not just from this page.
+
+const LIVE_LINES = {
+  curation_overridden_by_condition: 'An experimental condition overrode the curator.',
+  artifact_audit_not_passed: 'The quality review did not pass the finished picture.',
+  post_result_evidence_unavailable: 'No picture was generated, so there was nothing for the independent reviewers to inspect.',
+  cycle_failed: 'The cycle stopped with an error (recorded, never hidden).'
+};
+
+function clip(text, max = 90) {
+  const s = String(text ?? '').trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+// One small, human peek into each step's payload.
+function liveDetail(event) {
+  const p = event.payload ?? {};
+  switch (event.type) {
+    case 'observation_selected': return clip(p.observation?.text);
+    case 'intention_locked': return clip(p.necessity?.statement ?? p.intention?.statement);
+    case 'candidates_generated': return `${(p.candidates ?? []).length} directions`;
+    case 'critics_reported': return `${(p.critiques ?? []).length} critiques`;
+    case 'candidate_revised': return clip(p.revised_candidate?.title);
+    case 'curation_decided':
+    case 'curation_overridden_by_condition':
+      return p.decision ? `decision: ${p.decision}${p.score != null ? ` · score ${p.score}` : ''}` : '';
+    case 'artifact_generated': return p.artifact_hash ? `image hash ${String(p.artifact_hash).slice(0, 10)}…` : '';
+    case 'artifact_audited': return p.overall_score != null
+      ? `score ${p.overall_score} → ${String(p.recommended_action ?? '').replace(/_/g, ' ')}`
+      : clip(String(p.recommended_action ?? '').replace(/_/g, ' '));
+    case 'audience_predicted': return clip(p.first_notice);
+    case 'memory_consolidated': return clip((p.unresolved_tensions ?? []).at(-1));
+    case 'cycle_completed': return p.canon_status ? `status: ${String(p.canon_status).replace(/_/g, ' ')}` : '';
+    case 'cycle_failed': return clip(p.message);
+    case 'artifact_decision_recorded': return p.decision ? `your decision: ${p.decision}` : '';
+    default: return '';
+  }
+}
+
+function setLiveStatus(kind, text) {
+  const status = $('live-status');
+  status.className = kind;
+  $('live-status-text').textContent = text;
+}
+
+function appendLiveStep(event) {
+  const line = STORY_LINES[event.type] ?? LIVE_LINES[event.type] ?? event.type.replace(/_/g, ' ');
+  const detail = liveDetail(event);
+  const time = (() => { try { return new Date(event.timestamp).toLocaleTimeString(); } catch { return ''; } })();
+  const item = document.createElement('li');
+  item.className = 'live-step current';
+  item.innerHTML = `<span class="live-role">${escapeHtml(roleLabel(event.actor))}</span>`
+    + `<span><span class="live-line">${escapeHtml(line)}</span>`
+    + (detail ? ` <span class="live-detail">— ${escapeHtml(detail)}</span>` : '')
+    + '</span>'
+    + `<span class="live-time">${escapeHtml(time)}</span>`;
+  const list = $('live-steps');
+  list.querySelectorAll('.current').forEach((el) => el.classList.remove('current'));
+  list.appendChild(item);
+}
+
+function handleLiveEvent(event) {
+  if (!event || typeof event.type !== 'string') return;
+  $('live').classList.remove('hidden');
+  if (event.type === 'cycle_started') {
+    $('live-steps').innerHTML = '';
+    setLiveStatus('working', 'The studio is working…');
+  }
+  appendLiveStep(event);
+  if (event.type === 'cycle_completed') setLiveStatus('', 'Finished — every step above is in the permanent record.');
+  if (event.type === 'cycle_failed') setLiveStatus('failed', 'The cycle failed. The failure itself was recorded.');
+}
+
+function connectLive() {
+  try {
+    const source = new EventSource('/api/live');
+    source.onmessage = (message) => {
+      try { handleLiveEvent(JSON.parse(message.data)); } catch { /* ignore malformed frames */ }
+    };
+    // EventSource reconnects on its own; nothing to do on error.
+  } catch { /* live view is an enhancement — the studio still works without it */ }
+}
+
 // --- Wire up -------------------------------------------------------------
 
 async function init() {
@@ -246,6 +335,7 @@ async function init() {
     $('details-toggle').textContent = hidden ? 'Show the full record ▾' : 'Hide the full record ▴';
   });
 
+  connectLive();
   try { renderState(await api('GET', '/api/state')); } catch { /* ignore */ }
 }
 
