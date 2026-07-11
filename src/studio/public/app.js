@@ -76,6 +76,8 @@ function showError(message) {
     text = "You've reached this studio's limit of pieces. Run `npm run reset` in the terminal to start a fresh studio.";
   } else if (/image API key/i.test(message)) {
     text = 'Save your image AI key above first (or switch to Practice mode).';
+  } else if (/incomplete cycle/i.test(message)) {
+    text = 'The studio was interrupted partway through an earlier piece. Run `npm run reset` in the terminal to start fresh — the record is archived, never erased.';
   }
   $('error').textContent = text;
 }
@@ -83,7 +85,7 @@ function showError(message) {
 async function beginCycle() {
   $('error').textContent = '';
   const seed = $('seed').value.trim();
-  if (!seed) { showError('Type an idea first.'); return; }
+  if (!seed) { showError('Type an idea first.'); $('seed').focus(); return; }
   $('begin').disabled = true;
   $('begin').textContent = 'Making…';
   decisionButtons(false);
@@ -97,6 +99,9 @@ async function beginCycle() {
     $('result').classList.remove('hidden');
     $('result-idea').textContent = cycle.seed || seed;
     $('result-goal').textContent = cycle.artist_brief || 'The studio set this piece aside.';
+    $('result-image').alt = cycle.artist_brief
+      ? `The picture the studio made. Its aim: ${cycle.artist_brief}`
+      : 'the art that was made';
     if (cycle.artifact_url) {
       $('result-image').src = cycle.artifact_url;
       $('result-image').classList.remove('hidden');
@@ -282,7 +287,7 @@ function roleColor(actor) {
 
 function renderCast() {
   $('cast').innerHTML = CAST.map((node) =>
-    `<div class="cast-node" data-cast="${node.key}" style="--role-color:${node.color}">`
+    `<div class="cast-node" role="listitem" data-cast="${node.key}" style="--role-color:${node.color}" title="${escapeHtml(node.name)} — lights up while this role works">`
     + '<span class="cast-dot"></span>'
     + `<span class="cast-name">${escapeHtml(node.name)}</span></div>`
   ).join('');
@@ -378,7 +383,13 @@ function appendLiveStep(event) {
     + (quote ? `<div class="live-quote">“${escapeHtml(quote)}”</div>` : '');
   const list = $('live-steps');
   list.querySelectorAll('.current').forEach((el) => el.classList.remove('current'));
+  // Follow-along scroll: keep the story's leading edge in view, but only when
+  // the viewer is already watching it — never yank the page away from someone
+  // who scrolled off to read something else.
+  const edge = list.lastElementChild;
+  const following = !edge || (edge.getBoundingClientRect().bottom <= window.innerHeight + 40 && edge.getBoundingClientRect().bottom >= 0);
   list.appendChild(item);
+  if (following && !REDUCED_MOTION && !document.hidden) item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 // Pacing: a deterministic cycle can persist all of its steps in well under a
@@ -450,6 +461,10 @@ async function init() {
   if (config.model) $('image-model').value = config.model;
 
   document.querySelectorAll('#mode-toggle button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  // Ctrl/Cmd+Enter in the idea box makes the art, like sending a message.
+  $('seed').addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !$('begin').disabled) beginCycle();
+  });
   $('set-key').addEventListener('click', setKey);
   $('clear-key').addEventListener('click', clearKey);
   $('test-conn').addEventListener('click', testConnection);
