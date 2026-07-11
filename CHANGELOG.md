@@ -12,6 +12,23 @@
   one-line payload peek per step — while a cycle runs, including cycles started
   from the terminal. `node src/cli.js run` prints the same live record line by
   line as steps are persisted (`HAUNTED_STUDIO_QUIET=1` suppresses it).
+- Make the live view tell the story vividly. A "cast" strip renders every role
+  as a stage light that comes on the moment that role works (pulsing while
+  active), each role gets its own color, and every step now quotes the role's
+  actual recorded words — the artist's stated necessity, the critics' strongest
+  objection, the curator's rationale, the audience model's predicted
+  misreading, the memory role's lesson — pulled straight from the event
+  payloads, never invented in the UI.
+- Pace and plain-speak the live story. Reveals are queued one per beat
+  (~0.4 s, presentation only — recorded timestamps are untouched and slow
+  real-image cycles are unaffected) so an instant deterministic cycle unfolds
+  legibly instead of landing as one dump; cast lights ignite with a brief
+  bloom; the finished piece is held until the story finishes; and
+  `prefers-reduced-motion` disables the pacing and animation. Jargon is
+  replaced with plain words: "Blind witness", "Plan checker", "Skeptic",
+  "Studio rules" instead of role slugs, decisions render as words
+  ("accepted", "rejected all", "sent back for revision") instead of raw
+  values, and the curator's line follows its actual decision.
 - Add ways to open the studio without the terminal: double-click launchers
   (`Open Haunted Studio.command` for macOS/Linux, `Open Haunted Studio.bat` for
   Windows) that start it and open the browser, and document the bookmarkable
