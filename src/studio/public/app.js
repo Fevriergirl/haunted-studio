@@ -93,6 +93,7 @@ async function beginCycle() {
   try {
     const cycle = await api('POST', '/api/cycle', body);
     currentCycleId = cycle.cycle_id;
+    await liveIdle(); // let the live story finish unfolding before the reveal
     $('result').classList.remove('hidden');
     $('result-idea').textContent = cycle.seed || seed;
     $('result-goal').textContent = cycle.artist_brief || 'The studio set this piece aside.';
@@ -192,10 +193,10 @@ function shortHash(value) {
 function roleLabel(actor) {
   const map = {
     'role:attention': 'Attention', 'role:artist': 'Artist', 'role:critics': 'Critics',
-    'role:curator': 'Curator', 'role:editor': 'Editor', 'role:artifact-witness': 'Witness · blind',
-    'role:deviation-comparator': 'Deviation comparator', 'role:adversarial-surprise-reviewer': 'Adversarial reviewer',
+    'role:curator': 'Curator', 'role:editor': 'Editor', 'role:artifact-witness': 'Blind witness',
+    'role:deviation-comparator': 'Plan checker', 'role:adversarial-surprise-reviewer': 'Skeptic',
     'visual-critic': 'Visual critic', 'role:audience-prediction': 'Audience model', 'role:memory': 'Memory',
-    'image-provider': 'Image provider', 'orchestrator': 'Orchestrator', 'experiment-orchestrator': 'Experiment'
+    'image-provider': 'Image maker', 'orchestrator': 'Orchestrator', 'experiment-orchestrator': 'Studio rules'
   };
   return map[actor] ?? String(actor ?? 'step').replace(/^role:/, '');
 }
@@ -233,11 +234,31 @@ async function loadProcess(cycleId) {
 // from the terminal, not just from this page.
 
 const LIVE_LINES = {
-  curation_overridden_by_condition: 'An experimental condition overrode the curator.',
-  artifact_audit_not_passed: 'The quality review did not pass the finished picture.',
+  curation_overridden_by_condition: 'This studio is set to always finish a picture, so it went ahead — the curator’s original call stays in the record.',
+  artifact_audit_not_passed: 'The quality review declined to pass the finished picture.',
   post_result_evidence_unavailable: 'No picture was generated, so there was nothing for the independent reviewers to inspect.',
   cycle_failed: 'The cycle stopped with an error (recorded, never hidden).'
 };
+
+// Plain words for recorded decision values (never shown as raw enums).
+const DECISION_WORDS = {
+  accept: 'accepted', revise: 'sent back for revision', reject_all: 'rejected all',
+  reject: 'discarded', unresolved: 'not sure yet'
+};
+function decisionWord(decision) {
+  return DECISION_WORDS[decision] ?? String(decision ?? '').replace(/_/g, ' ');
+}
+
+// The curator's line must follow the curator's actual decision.
+function liveLine(event) {
+  if (event.type === 'curation_decided') {
+    const decision = event.payload?.decision;
+    if (decision === 'revise') return 'Sent the most promising one back for another pass.';
+    if (decision === 'reject_all') return 'Decided none of them were good enough yet.';
+    return 'Chose which one to actually make.';
+  }
+  return STORY_LINES[event.type] ?? LIVE_LINES[event.type] ?? event.type.replace(/_/g, ' ');
+}
 
 // The cast strip: every role as a stage light, in the order a cycle visits
 // them. Each actor maps to one light; the light comes on when its role works.
@@ -248,8 +269,8 @@ const CAST = [
   { key: 'curator', name: 'Curator', color: '#7ee2a8', actors: ['role:curator', 'experiment-orchestrator'] },
   { key: 'image', name: 'Image', color: '#f0d97e', actors: ['image-provider'] },
   { key: 'witness', name: 'Witness', color: '#8fb8ff', actors: ['role:artifact-witness'] },
-  { key: 'comparator', name: 'Comparator', color: '#6ee2d8', actors: ['role:deviation-comparator'] },
-  { key: 'reviewer', name: 'Reviewer', color: '#ff8a8a', actors: ['role:adversarial-surprise-reviewer', 'visual-critic'] },
+  { key: 'comparator', name: 'Plan check', color: '#6ee2d8', actors: ['role:deviation-comparator'] },
+  { key: 'reviewer', name: 'Review', color: '#ff8a8a', actors: ['role:adversarial-surprise-reviewer', 'visual-critic'] },
   { key: 'audience', name: 'Audience', color: '#f0a6c4', actors: ['role:audience-prediction'] },
   { key: 'memory', name: 'Memory', color: '#e2c07e', actors: ['role:memory'] }
 ];
@@ -320,7 +341,7 @@ function liveDetail(event) {
     case 'candidate_revised': return clip(p.revised_candidate?.title);
     case 'curation_decided':
     case 'curation_overridden_by_condition':
-      return p.decision ? `decision: ${p.decision}${p.score != null ? ` · score ${p.score}` : ''}` : '';
+      return p.decision ? `${decisionWord(p.decision)}${p.score != null ? ` · score ${p.score}` : ''}` : '';
     case 'artifact_generated': return p.artifact_hash ? `image hash ${String(p.artifact_hash).slice(0, 10)}…` : '';
     case 'artifact_audited': return p.overall_score != null
       ? `score ${p.overall_score} → ${String(p.recommended_action ?? '').replace(/_/g, ' ')}`
@@ -329,7 +350,7 @@ function liveDetail(event) {
     case 'memory_consolidated': return clip((p.unresolved_tensions ?? []).at(-1));
     case 'cycle_completed': return p.canon_status ? `status: ${String(p.canon_status).replace(/_/g, ' ')}` : '';
     case 'cycle_failed': return clip(p.message);
-    case 'artifact_decision_recorded': return p.decision ? `your decision: ${p.decision}` : '';
+    case 'artifact_decision_recorded': return p.decision ? `you ${p.decision === 'accept' ? 'kept it' : p.decision === 'reject' ? 'discarded it' : 'were not sure yet'}` : '';
     default: return '';
   }
 }
@@ -341,7 +362,7 @@ function setLiveStatus(kind, text) {
 }
 
 function appendLiveStep(event) {
-  const line = STORY_LINES[event.type] ?? LIVE_LINES[event.type] ?? event.type.replace(/_/g, ' ');
+  const line = liveLine(event);
   const detail = liveDetail(event);
   const quote = liveQuote(event);
   const time = (() => { try { return new Date(event.timestamp).toLocaleTimeString(); } catch { return ''; } })();
@@ -360,8 +381,42 @@ function appendLiveStep(event) {
   list.appendChild(item);
 }
 
+// Pacing: a deterministic cycle can persist all of its steps in well under a
+// second, and fifteen story beats landing in one frame read as a dump, not as
+// work happening. Reveals are therefore queued and released one per beat, so
+// the story unfolds legibly no matter how fast the engine ran. The queue only
+// paces *presentation* — recorded timestamps are shown untouched, and slow
+// (real-image) cycles are unaffected because their events arrive slower than
+// the beat. Respects prefers-reduced-motion by dropping the delay entirely.
+const REDUCED_MOTION = Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const LIVE_BEAT_MS = REDUCED_MOTION ? 0 : 420;
+const liveQueue = [];
+let liveDraining = false;
+
 function handleLiveEvent(event) {
   if (!event || typeof event.type !== 'string') return;
+  liveQueue.push(event);
+  if (!liveDraining) { liveDraining = true; drainLiveQueue(); }
+}
+
+function drainLiveQueue() {
+  const event = liveQueue.shift();
+  if (!event) { liveDraining = false; return; }
+  revealLiveEvent(event);
+  if (LIVE_BEAT_MS === 0) return drainLiveQueue();
+  setTimeout(drainLiveQueue, LIVE_BEAT_MS);
+}
+
+// Resolves once every queued step has been revealed (immediately if the live
+// stream never delivered anything, so the result never waits on a dead stream).
+function liveIdle() {
+  return new Promise((resolve) => {
+    const check = () => ((liveDraining || liveQueue.length) ? setTimeout(check, 120) : resolve());
+    check();
+  });
+}
+
+function revealLiveEvent(event) {
   $('live').classList.remove('hidden');
   if (!$('cast').childElementCount) renderCast(); // joined mid-cycle: still show the cast
   if (event.type === 'cycle_started') {
