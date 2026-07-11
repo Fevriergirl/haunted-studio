@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Six quick wins from a plain-user audit of the studio app: it is now
+  installable as an app (web app manifest + on-theme SVG icon served by the
+  studio server, so "Add to Home Screen" works on the deployed site); the
+  same icon is the favicon, ending the 404 logged on every page load;
+  Ctrl/Cmd+Enter in the idea box makes the art; the live status announces
+  politely to screen readers, the cast lights carry labels/tooltips, and the
+  result image gets meaningful alt text; the "incomplete cycle" error is
+  explained in plain words with the fix; and the live story gently follows
+  its own newest step — only when the viewer is already watching it.
+
 - Show the program working live. The append-only ledger now accepts read-only
   subscribers (`ledger.subscribe(listener)`), notified with each event exactly
   as persisted — never on idempotent replays, and a throwing listener cannot

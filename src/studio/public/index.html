@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0e0e12" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <title>Haunted Studio</title>
   <style>
     :root { color-scheme: dark; }
@@ -145,8 +148,8 @@
     <div class="card hidden" id="live">
       <h2>2 · Watch it work</h2>
       <p class="help">The studio works in separate roles, like a small crew. Each one reports here the moment its step is saved to the permanent record — nothing is shown that wasn't really done. The lights are the crew; each comes on as that role does its part.</p>
-      <div id="live-status"><span class="dot"></span><span id="live-status-text">Waiting…</span></div>
-      <div class="cast" id="cast"></div>
+      <div id="live-status" aria-live="polite"><span class="dot"></span><span id="live-status-text">Waiting…</span></div>
+      <div class="cast" id="cast" role="list" aria-label="The studio's roles"></div>
       <ul class="live-steps" id="live-steps"></ul>
     </div>
 

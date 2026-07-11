@@ -22,7 +22,8 @@ const CONTENT_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
-  '.json': 'application/json'
+  '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json'
 };
 
 function sendJson(response, status, body) {
@@ -127,6 +128,9 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
       }
       if (request.method === 'GET' && url.pathname === '/app.js') {
         return await sendFile(response, path.join(PUBLIC_DIR, 'app.js'));
+      }
+      if (request.method === 'GET' && (url.pathname === '/icon.svg' || url.pathname === '/manifest.webmanifest')) {
+        return await sendFile(response, path.join(PUBLIC_DIR, url.pathname.slice(1)));
       }
       if (request.method === 'GET' && url.pathname === '/api/config') {
         return sendJson(response, 200, {
