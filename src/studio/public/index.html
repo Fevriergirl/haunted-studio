@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0e0e12" />
+  <!-- iOS home-screen app: Safari ignores SVG manifest icons, needs these. -->
+  <link rel="apple-touch-icon" href="/icon-180.png" />
+  <meta name="apple-mobile-web-app-title" content="Haunted Studio" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Haunted Studio</title>
@@ -11,13 +17,15 @@
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0e0e12; color: #e7e7ea; line-height: 1.55; }
-    header { padding: 16px 22px; border-bottom: 1px solid #26262e; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    /* Safe areas: in home-screen (standalone) mode with viewport-fit=cover the
+       page extends under the iPhone notch and home indicator; pad around them. */
+    header { padding: calc(16px + env(safe-area-inset-top, 0px)) calc(22px + env(safe-area-inset-right, 0px)) 16px calc(22px + env(safe-area-inset-left, 0px)); border-bottom: 1px solid #26262e; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
     header h1 { font-size: 17px; margin: 0; letter-spacing: 0.5px; }
     header .tagline { color: #9a9aa6; font-size: 13px; }
     #mode-banner { margin-left: auto; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
     .mode-mock { background: #1d3a26; color: #7ee2a8; border: 1px solid #2e6b45; }
     .mode-image { background: #3a1d2a; color: #f0a6c4; border: 1px solid #6b2e4f; }
-    main { max-width: 720px; margin: 0 auto; padding: 20px 22px 60px; }
+    main { max-width: 720px; margin: 0 auto; padding: 20px calc(22px + env(safe-area-inset-right, 0px)) calc(60px + env(safe-area-inset-bottom, 0px)) calc(22px + env(safe-area-inset-left, 0px)); }
     .card { background: #15151b; border: 1px solid #26262e; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
     .card h2 { font-size: 15px; margin: 0 0 4px; }
     .card .help { color: #9a9aa6; font-size: 13px; margin: 0 0 12px; }
@@ -92,6 +100,9 @@
     .live-step .live-detail { color: #7a7a86; font-size: 12px; }
     .live-step .live-time { margin-left: auto; flex: none; color: #55555f; font-size: 11px; font-variant-numeric: tabular-nums; }
     .live-step .live-quote { margin: 5px 0 0 82px; padding-left: 10px; border-left: 2px solid color-mix(in srgb, var(--role-color) 55%, transparent); color: #b9b9c6; font-style: italic; font-size: 12.5px; line-height: 1.5; animation: live-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.14s both; }
+    /* Unbroken strings (content hashes, artifact ids, file paths) must wrap on
+       narrow phone screens instead of widening the page. */
+    .live-step .live-quote, .live-step .live-detail, .field, #saved-line { overflow-wrap: anywhere; }
     .live-step.current .live-role { box-shadow: 0 0 8px 0 color-mix(in srgb, var(--role-color) 40%, transparent); }
     @media (max-width: 560px) { .live-step .live-quote { margin-left: 0; } }
     @media (prefers-reduced-motion: reduce) {

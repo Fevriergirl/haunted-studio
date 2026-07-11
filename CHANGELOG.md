@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Ready for iOS. Safari ignores SVG manifest icons, so the studio now ships
+  full-bleed 180px and 512px PNG icons (rendered from the SVG, committed as
+  assets) with an `apple-touch-icon` link and the iOS standalone meta tags —
+  "Add to Home Screen" on an iPhone now installs a proper dark, named app.
+  The viewport opts into `viewport-fit=cover` with `env(safe-area-inset-*)`
+  padding so standalone mode clears the notch and home indicator, and
+  unbroken strings (content hashes, artifact ids, file paths) wrap on narrow
+  screens instead of widening the page.
+
 - Six quick wins from a plain-user audit of the studio app: it is now
   installable as an app (web app manifest + on-theme SVG icon served by the
   studio server, so "Add to Home Screen" works on the deployed site); the
