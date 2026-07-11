@@ -129,7 +129,8 @@ export function startStudioServer({ studio, mode = 'mock', port = 19830, host = 
       if (request.method === 'GET' && url.pathname === '/app.js') {
         return await sendFile(response, path.join(PUBLIC_DIR, 'app.js'));
       }
-      if (request.method === 'GET' && (url.pathname === '/icon.svg' || url.pathname === '/manifest.webmanifest')) {
+      const STATIC_FILES = ['/icon.svg', '/icon-180.png', '/icon-512.png', '/manifest.webmanifest'];
+      if (request.method === 'GET' && STATIC_FILES.includes(url.pathname)) {
         return await sendFile(response, path.join(PUBLIC_DIR, url.pathname.slice(1)));
       }
       if (request.method === 'GET' && url.pathname === '/api/config') {
